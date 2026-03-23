@@ -9,7 +9,7 @@ class Device < ApplicationRecord
   # Token digest is bcrypt — never store raw token.
   validates :name,         presence: true
   validates :platform,     presence: true,
-    inclusion: { in: %w[android ios desktop web] }
+    inclusion: { in: %w[android desktop web] }
   validates :token_digest, presence: true, uniqueness: true
 
   def self.mutable_columns

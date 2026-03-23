@@ -50,7 +50,7 @@ class CreateCoreTables < ActiveRecord::Migration[8.1]
       t.references :user, null: false, foreign_key: true
 
       t.string :name,         null: false            # human label, e.g. "Pixel 9"
-      t.string :platform,     null: false            # android | ios | desktop | web
+      t.string :platform,     null: false            # android | desktop | web
       t.string :token_digest, null: false            # bcrypt of device auth token
       t.datetime :last_seen_at
       t.boolean  :is_active,  null: false, default: true
