@@ -1,0 +1,35 @@
+# Claude Code session data
+.claude/
+
+# Rails
+server/health_tracker_api/.bundle/
+server/health_tracker_api/log/
+server/health_tracker_api/tmp/
+server/health_tracker_api/storage/
+server/health_tracker_api/public/assets/
+server/health_tracker_api/.env
+server/health_tracker_api/config/master.key
+server/health_tracker_api/config/credentials/*.key
+
+# Rust
+desktop/target/
+
+# Android
+android/.gradle/
+android/local.properties
+android/app/build/
+*.apk
+*.aab
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Secrets / env
+.env
+.env.*
+!.env.example
