@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Body Ledger</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0f0f0f;
+      color: #c8c8c8;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+      padding: 2rem 1rem;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    h1 { color: #e8e8e8; font-size: 2rem; margin-bottom: 0.25rem; }
+    h2 { color: #d0d0d0; font-size: 1.1rem; margin: 2rem 0 0.75rem; border-bottom: 1px solid #2a2a2a; padding-bottom: 0.4rem; }
+    p  { margin-bottom: 1rem; color: #b0b0b0; }
+    hr { border: none; border-top: 1px solid #222; margin: 2rem 0; }
+
+    .tagline { color: #888; font-size: 0.95rem; margin-bottom: 2rem; }
+
+    table { width: 100%; border-collapse: collapse; margin-bottom: 1.5rem; font-size: 0.9rem; }
+    th { text-align: left; color: #888; font-weight: 600; padding: 0.4rem 0.75rem; border-bottom: 1px solid #2a2a2a; }
+    td { padding: 0.4rem 0.75rem; border-bottom: 1px solid #1e1e1e; color: #b0b0b0; }
+    td:first-child { color: #d0d0d0; white-space: nowrap; }
+    tr:last-child td { border-bottom: none; }
+
+    ul { padding-left: 1.25rem; margin-bottom: 1rem; color: #b0b0b0; }
+    li { margin-bottom: 0.3rem; }
+
+    .stack-table td:first-child { font-weight: 500; }
+
+    footer { margin-top: 3rem; color: #444; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+
+  <h1>Body Ledger</h1>
+  <p class="tagline">A personal health tracking system built on an append-only event ledger.</p>
+
+  <p>No deletes, no overwrites, full audit trail. Offline-first across all clients. Self-hosted — no third-party cloud, no lock-in.</p>
+
+  <hr>
+
+  <h2>Design Principles</h2>
+  <ul>
+    <li><strong>Immutable ledger</strong> — health events are never modified or deleted. Corrections are amendment events that reference the original. Current state is always computable from the full log.</li>
+    <li><strong>Thin clients</strong> — clients record raw events and render results. All business logic lives in Rails. One correct implementation, applied everywhere.</li>
+    <li><strong>Offline-first</strong> — every client buffers to local SQLite and syncs when connected. The append-only model makes sync almost always additive.</li>
+    <li><strong>Full data ownership</strong> — self-hosted on your own server.</li>
+  </ul>
+
+  <h2>Stack</h2>
+  <table class="stack-table">
+    <tr><th>Layer</th><th>Technology</th></tr>
+    <tr><td>Backend / sync hub</td><td>Rails 8.1 + PostgreSQL</td></tr>
+    <tr><td>Web client</td><td>To be decided</td></tr>
+    <tr><td>Android client</td><td>Kotlin, Room, WorkManager, Health Connect</td></tr>
+    <tr><td>Desktop client</td><td>Rust + iced (Wayland-native)</td></tr>
+    <tr><td>Auth</td><td>BCrypt + TOTP (rotp)</td></tr>
+  </table>
+
+  <h2>Metrics Tracked</h2>
+  <table>
+    <tr><th>Metric</th><th>Key fields</th></tr>
+    <tr><td>Blood pressure</td><td>systolic, diastolic, pulse, reading_context (wake/sleep — never averaged together)</td></tr>
+    <tr><td>Weight</td><td>value_kg, original_unit, original_value</td></tr>
+    <tr><td>Sleep</td><td>sleep_start, sleep_end; attributed to wake date</td></tr>
+    <tr><td>Activity</td><td>activity_type, duration, distance, steps, heart_rate_avg, calories</td></tr>
+    <tr><td>Nutrition</td><td>meal_type, macros, micronutrients (JSONB)</td></tr>
+    <tr><td>Symptom</td><td>symptom_code, severity (1–10), body_location</td></tr>
+    <tr><td>Medication dose</td><td>medication_id, dose_mg, dose_type (scheduled/prn/missed)</td></tr>
+  </table>
+
+  <h2>API Endpoints</h2>
+  <table>
+    <tr><th>Method</th><th>Endpoint</th><th>Description</th></tr>
+    <tr><td>POST</td><td>/api/v1/auth/register</td><td>Create account</td></tr>
+    <tr><td>POST</td><td>/api/v1/auth/login</td><td>Validate credentials + TOTP</td></tr>
+    <tr><td>POST</td><td>/api/v1/auth/totp_setup</td><td>Generate TOTP secret + QR</td></tr>
+    <tr><td>POST</td><td>/api/v1/auth/totp_verify</td><td>Verify first TOTP code</td></tr>
+    <tr><td>POST</td><td>/api/v1/devices</td><td>Register device, return token (shown once)</td></tr>
+    <tr><td>PATCH</td><td>/api/v1/devices/:id</td><td>Update last_seen_at / deactivate</td></tr>
+    <tr><td>GET</td><td>/api/v1/health_events</td><td>List events (filter by type, date, status)</td></tr>
+    <tr><td>POST</td><td>/api/v1/health_events</td><td>Create event + payload; idempotent via client_uuid</td></tr>
+    <tr><td>GET</td><td>/api/v1/health_events/:id</td><td>Single event with payload</td></tr>
+    <tr><td>POST</td><td>/api/v1/health_events/:id/amend</td><td>Amend event; original marked superseded atomically</td></tr>
+    <tr><td>GET</td><td>/api/v1/medications</td><td>List medications</td></tr>
+    <tr><td>POST</td><td>/api/v1/medications</td><td>Create medication</td></tr>
+    <tr><td>GET</td><td>/api/v1/summaries</td><td>Daily summaries</td></tr>
+    <tr><td>POST</td><td>/api/v1/sync</td><td>Pull events from other devices since last sync</td></tr>
+  </table>
+
+  <footer>api.bodyledger.org</footer>
+
+</body>
+</html>
