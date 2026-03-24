@@ -3,7 +3,10 @@ Rails.application.routes.draw do
 
   namespace :api do
     namespace :v1 do
-      post "auth/login", to: "auth#login"
+      post "auth/register",    to: "auth#register"
+      post "auth/login",       to: "auth#login"
+      post "auth/totp_setup",  to: "auth#totp_setup"
+      post "auth/totp_verify", to: "auth#totp_verify"
 
       resources :devices, only: [ :create, :update ]
 

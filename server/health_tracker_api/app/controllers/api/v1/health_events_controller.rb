@@ -50,7 +50,9 @@ module Api
         errors = []
 
         ActiveRecord::Base.transaction do
-          event = current_user.health_events.build(event_attrs.merge(device: current_device))
+          event = current_user.health_events.build(
+            event_attrs.merge(device: current_device, confirmation_status: "confirmed")
+          )
 
           unless event.save
             errors = event.errors.full_messages

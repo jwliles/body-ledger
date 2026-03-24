@@ -12,6 +12,12 @@ module Api
           return render json: { error: "Invalid credentials" }, status: :unauthorized
         end
 
+        if user.otp_required_for_login
+          unless user.validate_otp!(params[:otp_attempt].to_s)
+            return render json: { error: "Invalid OTP" }, status: :unauthorized
+          end
+        end
+
         raw_token    = SecureRandom.hex(32)
         token_digest = Digest::SHA256.hexdigest(raw_token)
 
