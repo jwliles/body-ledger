@@ -38,6 +38,9 @@ gem "rack-cors"
 # TOTP two-factor authentication
 gem "rotp", "~> 6.0"
 
+# Password entropy scoring
+gem "zxcvbn"
+
 # QR code generation for TOTP setup
 gem "rqrcode"
 

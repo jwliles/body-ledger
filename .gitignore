@@ -33,3 +33,7 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# Generated QR codes (may contain TOTP secrets)
+otp.svg
+otp_clean.svg

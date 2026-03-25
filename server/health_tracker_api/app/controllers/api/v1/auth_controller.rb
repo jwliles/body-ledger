@@ -6,25 +6,25 @@ module Api
       # POST /api/v1/auth/register
       def register
         user = User.new(
-          email:     params[:email]&.downcase,
+          username:  params[:username],
+          email:     params[:email]&.strip&.downcase.presence,
           time_zone: params[:time_zone]
         )
         user.password = params[:password]
 
         if user.save
-          render json: { id: user.id, email: user.email, time_zone: user.time_zone }, status: :created
+          render json: { id: user.id, username: user.username, time_zone: user.time_zone }, status: :created
         else
           render json: { errors: user.errors.full_messages }, status: :unprocessable_entity
         end
       end
 
       # POST /api/v1/auth/login
-      # Validates email + password (and TOTP if enabled) and returns basic user info.
       def login
-        user = User.find_by(email: params[:email]&.downcase)
+        user = User.find_by(username: params[:username])
 
         unless user&.authenticate(params[:password])
-          return render json: { error: "Invalid email or password" }, status: :unauthorized
+          return render json: { error: "Invalid username or password" }, status: :unauthorized
         end
 
         if user.otp_required_for_login
@@ -33,7 +33,7 @@ module Api
           end
         end
 
-        render json: { id: user.id, email: user.email, time_zone: user.time_zone }
+        render json: { id: user.id, username: user.username, time_zone: user.time_zone }
       end
 
       # POST /api/v1/auth/totp_setup
