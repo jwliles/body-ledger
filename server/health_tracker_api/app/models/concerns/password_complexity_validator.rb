@@ -22,7 +22,7 @@ class PasswordComplexityValidator < ActiveModel::EachValidator
 
     result = Zxcvbn.test(value)
     if result.score < 3
-      hint = result.feedback.warning.presence || "try a longer or more varied password"
+      hint = result.feedback["warning"].presence || "try a longer or more varied password"
       record.errors.add(attribute, "is not strong enough — #{hint}")
     end
   end
