@@ -90,6 +90,8 @@ production:
     database: health_tracker_api_production
     username: health_tracker_api
     password: <%= ENV["HEALTH_TRACKER_API_DATABASE_PASSWORD"] %>
+    host: localhost
+    port: 5432
   cache:
     <<: *primary_production
     database: health_tracker_api_production_cache
