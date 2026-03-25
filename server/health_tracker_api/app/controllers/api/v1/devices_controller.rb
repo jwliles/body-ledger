@@ -7,7 +7,7 @@ module Api
       # Registers a new device. Requires user credentials in the body.
       # Returns the raw token once — store it, it is never returned again.
       def create
-        user = User.find_by(email: params[:email]&.downcase)
+        user = User.find_by(username: params[:username])
         unless user&.authenticate(params[:password])
           return render json: { error: "Invalid credentials" }, status: :unauthorized
         end

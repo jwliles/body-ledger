@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 
+const API = process.env.NEXT_PUBLIC_API_URL;
+
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [totp, setTotp] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -13,8 +15,35 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    // API integration coming soon
-    setLoading(false);
+
+    try {
+      const res = await fetch(`${API}/api/v1/devices`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username,
+          password,
+          otp_attempt: totp,
+          name: "Web Browser",
+          platform: "web",
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error ?? "Something went wrong");
+        return;
+      }
+
+      localStorage.setItem("device_token", data.token);
+      localStorage.setItem("device_id", String(data.id));
+      // TODO: redirect to dashboard
+    } catch {
+      setError("Could not reach the server");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -35,20 +64,20 @@ export default function LoginPage() {
           onSubmit={handleSubmit}
           className="rounded-2xl bg-ctp-base p-8 flex flex-col gap-5 border border-ctp-surface0"
         >
-          {/* Email */}
+          {/* Username */}
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="email" className="text-sm text-ctp-subtext1">
-              Email
+            <label htmlFor="username" className="text-sm text-ctp-subtext1">
+              Username
             </label>
             <input
-              id="email"
-              type="email"
-              autoComplete="email"
+              id="username"
+              type="text"
+              autoComplete="username"
               required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
               className="rounded-lg bg-ctp-surface1 px-3 py-2 text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue transition"
-              placeholder="you@example.com"
+              placeholder="jwl"
             />
           </div>
 
@@ -83,7 +112,7 @@ export default function LoginPage() {
               maxLength={6}
               value={totp}
               onChange={(e) => setTotp(e.target.value.replace(/\D/g, ""))}
-              className="rounded-lg bg-ctp-surface0 px-3 py-2 text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue tracking-widest transition"
+              className="rounded-lg bg-ctp-surface1 px-3 py-2 text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue transition tracking-widest"
               placeholder="000000"
             />
           </div>
