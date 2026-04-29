@@ -1,8 +1,7 @@
 # New Architecture — Health Tracker Migration
 
 ## Status
-**Planning phase.** Obsidian plugin is complete and deployed. New stack decided, not yet started.
-Next step: design Rails schema (event sourcing based).
+**Implementation in progress.** Obsidian plugin is complete and deployed. Backend (Rails API) is fully built and live at `api.bodyledger.org`. Web client (~20% complete — auth + medication adherence dashboard). Android and desktop clients not yet started.
 
 ## Why Migrating
 - Obsidian mobile is clunky for health logging
@@ -20,7 +19,7 @@ Next step: design Rails schema (event sourcing based).
 | Backend/sync | Rails API + PostgreSQL | Business logic lives here |
 | Desktop local DB | rusqlite + sqlx or diesel | Offline-first SQLite |
 | Android local DB | Room | Offline-first SQLite |
-| Auth | Devise + devise-two-factor | MFA, single user now, open to multi-user |
+| Auth | Custom BCrypt (`has_secure_password`) + rotp + rqrcode + zxcvbn | No Devise; MFA via rotp; single user now |
 
 ## Client Architecture (Thin Clients — Blazor-style)
 - Clients send raw event data to Rails
@@ -77,15 +76,15 @@ Key rules:
 - TypeScript: comfortable (this plugin)
 - Go, Python: comfortable
 
-## Repos (not yet created)
-- `health_tracker_api` — Rails backend
-- `health_tracker_android` — Kotlin Android
-- `health_tracker_desktop` — Rust + iced
+## Repos
+- `health_tracker_api` — Rails backend ✓ (complete, live at api.bodyledger.org)
+- `health_tracker_android` — Kotlin Android (not yet started)
+- `health_tracker_desktop` — Rust + iced (not yet started)
 
 ## Next Steps
-1. Design Rails schema (PostgreSQL, event sourcing based)
-2. Design API endpoints
-3. Scaffold Rails project
+1. ✓ Design Rails schema (PostgreSQL, event sourcing based)
+2. ✓ Design API endpoints
+3. ✓ Scaffold Rails project
 4. Android client
 5. Desktop client (iced)
 6. Data migration from Obsidian plugin JSON files

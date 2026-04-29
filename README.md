@@ -30,12 +30,12 @@ A personal health tracking system built on an append-only event ledger — the s
 | Layer | Technology |
 |-------|------------|
 | Backend / sync hub | Rails 8.1 + PostgreSQL |
-| Web client | To be decided |
+| Web client | Next.js 16 + React 19 + Tailwind CSS 4 + TypeScript 5 |
 | Android client | Kotlin (native), Room, WorkManager, Health Connect |
 | Desktop client | Rust + iced (Wayland-native, KDE) |
 | Android local DB | Room (SQLite) |
 | Desktop local DB | rusqlite + sqlx or diesel (SQLite) |
-| Auth | Devise + devise-two-factor (TOTP MFA) |
+| Auth | Custom username/password + TOTP (rotp, rqrcode, zxcvbn) |
 
 **Supported platforms:** Android, Web, Desktop (Linux/Wayland) — no iOS or macOS.
 
@@ -55,19 +55,18 @@ A personal health tracking system built on an append-only event ledger — the s
 
 ---
 
-## Current Status
+## What's Built
 
-### Backend — Rails API
+### Backend — Rails API (live at `api.bodyledger.org`)
 
-**Complete:**
-- Full PostgreSQL schema with all tables and constraints
-- Immutable ActiveRecord models with amendment chain support
-- Projectors for all 7 metric types that materialize `daily_summaries`
-- Complete REST API:
+Full PostgreSQL schema with all tables and constraints. Immutable ActiveRecord models with amendment chain support. Projectors for all 7 metric types that materialize `daily_summaries`. CORS configured. Device token auth (`Authorization: Bearer <token>`) on every request except registration and login.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| POST | `/api/v1/auth/register` | Create user account |
 | POST | `/api/v1/auth/login` | Validate credentials, return user info |
+| POST | `/api/v1/auth/totp_setup` | Generate OTP secret and QR code |
+| POST | `/api/v1/auth/totp_verify` | Verify TOTP code and enable 2FA |
 | POST | `/api/v1/devices` | Register device, return token (shown once) |
 | PATCH | `/api/v1/devices/:id` | Update last_seen_at / deactivate |
 | GET | `/api/v1/health_events` | List events (filter: metric_type, date range, status) |
@@ -79,19 +78,14 @@ A personal health tracking system built on an append-only event ledger — the s
 | GET | `/api/v1/summaries` | Daily summaries (triggers projectors on request) |
 | POST | `/api/v1/sync` | Pull events from other devices since last_synced_at |
 
-- Device token auth (`Authorization: Bearer <token>`) on every request except registration
-- SHA-256 token digest stored in DB — O(1) indexed lookup, 256-bit entropy
+SHA-256 token digest stored in DB — O(1) indexed lookup, 256-bit entropy.
 
-**Not yet done:**
-- Devise + devise-two-factor not added to Gemfile; User model is a placeholder
-- No user registration endpoint
-- No TOTP verification step in login flow
-- CORS not configured (needed for web client)
-- Confirmation workflow: events default to `pending`; promotion rule not yet decided
-- PostgreSQL not installed; migrations not run; `bundle install` not run
-- No tests
+### Web Client — In progress (`web/`)
 
-### Web Client — Not started
+- Auth page: login and signup tabs, TOTP input field
+- Dashboard: medication adherence table (last dose, time since)
+- Catppuccin dark theme, Atkinson Hyperlegible font
+- API URL configurable via `NEXT_PUBLIC_API_URL`
 
 ### Android Client — Not started
 
@@ -99,19 +93,40 @@ A personal health tracking system built on an append-only event ledger — the s
 
 ---
 
+## Getting Started
+
+### Backend
+
+```sh
+cd server/health_tracker_api
+bundle install
+rails db:create db:migrate
+rails s                        # → http://localhost:3000
+```
+
+### Web
+
+```sh
+cd web
+npm install
+# create web/.env.local with:
+# NEXT_PUBLIC_API_URL=http://localhost:3000
+npm run dev                    # → http://localhost:3000 (or next available port)
+```
+
+### Environment Variables
+
+| Variable | Where | Purpose |
+|----------|-------|---------|
+| `HEALTH_TRACKER_API_DATABASE_PASSWORD` | Backend (production only) | PostgreSQL password |
+| `NEXT_PUBLIC_API_URL` | Web | API base URL |
+
+---
+
 ## Next Steps
 
-### Immediate (get the API running)
-1. Add Devise + devise-two-factor to Gemfile; wire up User model
-2. Add user registration endpoint
-3. Add TOTP step to login flow
-4. Configure CORS (`rack-cors`)
-5. Install PostgreSQL, create database, run migrations
-6. Decide confirmation rule (auto-confirm on sync? manual? Health Connect data = auto-confirmed?)
-
-### Web Client (MVP)
-- Auth UI (login + TOTP)
-- Metric entry forms (one per metric type)
+### Web Client (remaining MVP work)
+- Metric entry forms (one per type)
 - History view (filterable event list)
 - Daily summary view
 - Settings (medications, device management)
