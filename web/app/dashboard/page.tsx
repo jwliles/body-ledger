@@ -15,6 +15,7 @@ type Medication = {
   scheduled_times: string[] | null;
   pill_size_mg: string | number | null;
   is_active: boolean;
+  created_at: string;
 };
 
 type HealthEvent = {
@@ -67,6 +68,25 @@ function formatDate(d: Date): string {
   return d.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
 }
 
+function formatDateOnly(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString([], {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
+function formatTimeOnly(dateStr: string): string {
+  return new Date(dateStr).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatDateTime(dateStr: string): string {
+  return `${formatDateOnly(dateStr)} ${formatTimeOnly(dateStr)}`;
+}
+
 function formatDose(value: string | number): string {
   const dose = Number(value);
   return Number.isFinite(dose) ? `${dose} mg` : `${value} mg`;
@@ -88,6 +108,21 @@ function medicationDefaultDose(medication: Medication): string {
 
 function eventMedicationId(event: HealthEvent): number | null {
   return event.payload?.medication_id ?? null;
+}
+
+function dailyExpectedDoses(medication: Medication): number | null {
+  if (medication.is_prn) return null;
+  const count = medication.scheduled_times?.filter(Boolean).length ?? 0;
+  return Math.max(1, count);
+}
+
+function isTakenDose(event: HealthEvent): boolean {
+  return Boolean(event.payload && event.payload.dose_type !== "missed");
+}
+
+function formatAdherence(taken: number, expected: number | null): string {
+  if (!expected) return "PRN";
+  return `${Math.round((taken / expected) * 100)}%`;
 }
 
 async function parseApiError(response: Response): Promise<string> {
@@ -139,6 +174,52 @@ export default function DashboardPage() {
   const medicationNames = useMemo(() => {
     return Object.fromEntries(medications.map((medication) => [medication.id, medication.name]));
   }, [medications]);
+
+  const basicRows = useMemo(() => {
+    return activeMedications.map((medication) => {
+      const medEvents = events.filter((event) => eventMedicationId(event) === medication.id);
+      const takenEvents = medEvents.filter(isTakenDose);
+      const lastEvent = medEvents[0];
+
+      return {
+        medication,
+        taken: takenEvents.length,
+        lastQty: lastEvent?.payload ? formatDose(lastEvent.payload.dose_mg) : "-",
+        lastAt: lastEvent ? formatDateTime(lastEvent.recorded_at) : "-",
+      };
+    });
+  }, [activeMedications, events]);
+
+  const adherenceRows = useMemo(() => {
+    const nowMs = Date.now();
+
+    return activeMedications.map((medication) => {
+      const perDay = dailyExpectedDoses(medication);
+
+      const takenInWindow = (days: number) => {
+        const cutoff = nowMs - days * 24 * 60 * 60 * 1000;
+        return events.filter((event) => {
+          return (
+            eventMedicationId(event) === medication.id &&
+            isTakenDose(event) &&
+            new Date(event.recorded_at).getTime() >= cutoff
+          );
+        }).length;
+      };
+
+      const taken7 = takenInWindow(7);
+      const taken30 = takenInWindow(30);
+
+      return {
+        medication,
+        adherence7: formatAdherence(taken7, perDay ? perDay * 7 : null),
+        adherence30: formatAdherence(taken30, perDay ? perDay * 30 : null),
+        lastTaken: lastDoses[medication.id]?.recorded_at
+          ? formatDateTime(lastDoses[medication.id].recorded_at)
+          : "-",
+      };
+    });
+  }, [activeMedications, events, lastDoses]);
 
   const fetchData = useCallback(async () => {
     const token = localStorage.getItem("device_token");
@@ -323,102 +404,122 @@ export default function DashboardPage() {
           {error && <p className="text-sm text-ctp-red">{error}</p>}
 
           {!loading && (
-            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
-              <section className="flex flex-col gap-3">
-                {activeMedications.length === 0 && (
-                  <div className="rounded-xl border border-ctp-surface0 bg-ctp-base px-4 py-6 text-center text-sm text-ctp-overlay0">
-                    Add your first medication to start logging doses.
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+              <section className="flex min-w-0 flex-col gap-5">
+                <section className="rounded-xl border border-ctp-surface0 bg-ctp-base">
+                  <div className="border-b border-ctp-surface0 px-4 py-3">
+                    <h3 className="text-base font-medium text-ctp-text">Basic Med Info</h3>
                   </div>
-                )}
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[620px] text-sm">
+                      <thead className="bg-ctp-surface0 text-ctp-subtext1">
+                        <tr>
+                          <th className="px-4 py-2.5 text-left font-medium">Medication</th>
+                          <th className="px-4 py-2.5 text-left font-medium">Taken</th>
+                          <th className="px-4 py-2.5 text-left font-medium">Last Qty</th>
+                          <th className="px-4 py-2.5 text-left font-medium">Last At</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {basicRows.length === 0 && (
+                          <tr>
+                            <td colSpan={4} className="px-4 py-4 text-center text-ctp-overlay0">
+                              Add your first medication to start logging doses.
+                            </td>
+                          </tr>
+                        )}
+                        {basicRows.map((row, index) => (
+                          <tr key={row.medication.id} className={index % 2 === 0 ? "bg-ctp-base" : "bg-ctp-mantle"}>
+                            <td className="px-4 py-3 text-ctp-text">
+                              {row.medication.name}
+                              <span className="ml-2 text-ctp-overlay0">{row.medication.strength}</span>
+                            </td>
+                            <td className="px-4 py-3 text-ctp-subtext0">{row.taken}</td>
+                            <td className="px-4 py-3 text-ctp-subtext0">{row.lastQty}</td>
+                            <td className="px-4 py-3 text-ctp-subtext0">{row.lastAt}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
 
-                {activeMedications.map((medication) => {
-                  const dose = lastDoses[medication.id];
-                  const doseForm = doseForms[medication.id] ?? {
-                    doseMg: medicationDefaultDose(medication),
-                    doseType: medication.is_prn ? "prn" : "scheduled",
-                  };
+                <section className="rounded-xl border border-ctp-surface0 bg-ctp-base">
+                  <div className="border-b border-ctp-surface0 px-4 py-3">
+                    <h3 className="text-base font-medium text-ctp-text">Adherence Tracking</h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[620px] text-sm">
+                      <thead className="bg-ctp-surface0 text-ctp-subtext1">
+                        <tr>
+                          <th className="px-4 py-2.5 text-left font-medium">Medication</th>
+                          <th className="px-4 py-2.5 text-left font-medium">Adherence 7d</th>
+                          <th className="px-4 py-2.5 text-left font-medium">Adherence 30d</th>
+                          <th className="px-4 py-2.5 text-left font-medium">Last Taken</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {adherenceRows.length === 0 && (
+                          <tr>
+                            <td colSpan={4} className="px-4 py-4 text-center text-ctp-overlay0">
+                              No adherence data yet.
+                            </td>
+                          </tr>
+                        )}
+                        {adherenceRows.map((row, index) => (
+                          <tr key={row.medication.id} className={index % 2 === 0 ? "bg-ctp-base" : "bg-ctp-mantle"}>
+                            <td className="px-4 py-3 text-ctp-text">{row.medication.name}</td>
+                            <td className="px-4 py-3 text-ctp-subtext0">{row.adherence7}</td>
+                            <td className="px-4 py-3 text-ctp-subtext0">{row.adherence30}</td>
+                            <td className="px-4 py-3 text-ctp-subtext0">{row.lastTaken}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
 
-                  return (
-                    <article
-                      key={medication.id}
-                      className="rounded-xl border border-ctp-surface0 bg-ctp-base p-4"
-                    >
-                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                          <h3 className="text-lg font-medium text-ctp-text">{medication.name}</h3>
-                          <p className="text-sm text-ctp-subtext0">
-                            {medication.strength}
-                            {medication.is_prn ? " · PRN" : ` · ${medication.scheduled_times?.join(", ") || "scheduled"}`}
-                          </p>
-                          <p className="mt-2 text-sm text-ctp-overlay0">
-                            Last dose:{" "}
-                            {dose?.payload
-                              ? `${formatDose(dose.payload.dose_mg)} ${timeAgo(dose.recorded_at)}`
-                              : "never"}
-                          </p>
-                        </div>
+                <section className="rounded-xl border border-ctp-surface0 bg-ctp-base">
+                  <div className="border-b border-ctp-surface0 px-4 py-3">
+                    <h3 className="text-base font-medium text-ctp-text">Recent Dose Logs</h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[700px] text-sm">
+                      <thead className="bg-ctp-surface0 text-ctp-subtext1">
+                        <tr>
+                          <th className="px-4 py-2.5 text-left font-medium">Date</th>
+                          <th className="px-4 py-2.5 text-left font-medium">Time</th>
+                          <th className="px-4 py-2.5 text-left font-medium">Medication</th>
+                          <th className="px-4 py-2.5 text-left font-medium">Qty</th>
+                          <th className="px-4 py-2.5 text-left font-medium">Type</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {events.slice(0, 20).length === 0 && (
+                          <tr>
+                            <td colSpan={5} className="px-4 py-4 text-center text-ctp-overlay0">
+                              No doses recorded yet.
+                            </td>
+                          </tr>
+                        )}
+                        {events.slice(0, 20).map((event, index) => {
+                          const payload = event.payload;
+                          if (!payload) return null;
 
-                        <div className="grid gap-2 sm:min-w-64">
-                          <div className="grid grid-cols-[1fr_1fr] gap-2">
-                            <input
-                              aria-label={`${medication.name} dose in milligrams`}
-                              type="number"
-                              min="0"
-                              step="0.001"
-                              value={doseForm.doseMg}
-                              onChange={(e) =>
-                                setDoseForms((forms) => ({
-                                  ...forms,
-                                  [medication.id]: { ...doseForm, doseMg: e.target.value },
-                                }))
-                              }
-                              className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
-                              placeholder="mg"
-                            />
-                            <select
-                              aria-label={`${medication.name} dose type`}
-                              value={doseForm.doseType}
-                              onChange={(e) =>
-                                setDoseForms((forms) => ({
-                                  ...forms,
-                                  [medication.id]: { ...doseForm, doseType: e.target.value as DoseType },
-                                }))
-                              }
-                              className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
-                            >
-                              <option value={medication.is_prn ? "prn" : "scheduled"}>
-                                {medication.is_prn ? "PRN" : "Scheduled"}
-                              </option>
-                              {!medication.is_prn && <option value="missed">Missed</option>}
-                              <option value="reconciliation">Reconciliation</option>
-                            </select>
-                          </div>
-
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              onClick={() => recordDose(medication)}
-                              disabled={savingDoseId === medication.id}
-                              className="flex-1 rounded-lg bg-[#89b4fa] px-3 py-2 text-sm font-medium text-[#1e1e2e] transition hover:bg-[#74c7ec] disabled:opacity-50"
-                            >
-                              {savingDoseId === medication.id ? "Saving..." : "Log dose"}
-                            </button>
-                            {!medication.is_prn && (
-                              <button
-                                type="button"
-                                onClick={() => recordDose(medication, { doseType: "missed" })}
-                                disabled={savingDoseId === medication.id}
-                                className="rounded-lg border border-ctp-surface1 px-3 py-2 text-sm text-ctp-subtext1 transition hover:text-ctp-red disabled:opacity-50"
-                              >
-                                Missed
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </article>
-                  );
-                })}
+                          return (
+                            <tr key={event.id} className={index % 2 === 0 ? "bg-ctp-base" : "bg-ctp-mantle"}>
+                              <td className="px-4 py-3 text-ctp-subtext0">{formatDateOnly(event.recorded_at)}</td>
+                              <td className="px-4 py-3 text-ctp-subtext0">{formatTimeOnly(event.recorded_at)}</td>
+                              <td className="px-4 py-3 text-ctp-text">{medicationNames[payload.medication_id] ?? "Medication"}</td>
+                              <td className="px-4 py-3 text-ctp-subtext0">{formatDose(payload.dose_mg)}</td>
+                              <td className="px-4 py-3 text-ctp-subtext0">{payload.dose_type}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
               </section>
 
               <aside className="flex flex-col gap-5">
@@ -484,23 +585,80 @@ export default function DashboardPage() {
                 </form>
 
                 <section className="rounded-xl border border-ctp-surface0 bg-ctp-base p-4">
-                  <h3 className="mb-3 text-base font-medium text-ctp-text">Recent doses</h3>
+                  <h3 className="mb-3 text-base font-medium text-ctp-text">Quick log</h3>
                   <div className="flex flex-col gap-3">
-                    {events.slice(0, 8).length === 0 && (
-                      <p className="text-sm text-ctp-overlay0">No doses recorded yet.</p>
+                    {activeMedications.length === 0 && (
+                      <p className="text-sm text-ctp-overlay0">Add a medication first.</p>
                     )}
-                    {events.slice(0, 8).map((event) => {
-                      const payload = event.payload;
-                      if (!payload) return null;
+                    {activeMedications.map((medication) => {
+                      const dose = lastDoses[medication.id];
+                      const doseForm = doseForms[medication.id] ?? {
+                        doseMg: medicationDefaultDose(medication),
+                        doseType: medication.is_prn ? "prn" : "scheduled",
+                      };
 
                       return (
-                        <div key={event.id} className="border-b border-ctp-surface0 pb-3 last:border-0 last:pb-0">
-                          <p className="text-sm text-ctp-text">
-                            {medicationNames[payload.medication_id] ?? "Medication"}
-                          </p>
-                          <p className="text-xs text-ctp-subtext0">
-                            {formatDose(payload.dose_mg)} · {payload.dose_type} · {timeAgo(event.recorded_at)}
-                          </p>
+                        <div key={medication.id} className="border-b border-ctp-surface0 pb-3 last:border-0 last:pb-0">
+                          <div className="mb-2">
+                            <p className="text-sm text-ctp-text">{medication.name}</p>
+                            <p className="text-xs text-ctp-overlay0">
+                              {dose?.payload ? `${formatDose(dose.payload.dose_mg)} ${timeAgo(dose.recorded_at)}` : "never logged"}
+                            </p>
+                          </div>
+                          <div className="grid grid-cols-[1fr_1fr] gap-2">
+                            <input
+                              aria-label={`${medication.name} dose in milligrams`}
+                              type="number"
+                              min="0"
+                              step="0.001"
+                              value={doseForm.doseMg}
+                              onChange={(e) =>
+                                setDoseForms((forms) => ({
+                                  ...forms,
+                                  [medication.id]: { ...doseForm, doseMg: e.target.value },
+                                }))
+                              }
+                              className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
+                              placeholder="mg"
+                            />
+                            <select
+                              aria-label={`${medication.name} dose type`}
+                              value={doseForm.doseType}
+                              onChange={(e) =>
+                                setDoseForms((forms) => ({
+                                  ...forms,
+                                  [medication.id]: { ...doseForm, doseType: e.target.value as DoseType },
+                                }))
+                              }
+                              className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
+                            >
+                              <option value={medication.is_prn ? "prn" : "scheduled"}>
+                                {medication.is_prn ? "PRN" : "Scheduled"}
+                              </option>
+                              {!medication.is_prn && <option value="missed">Missed</option>}
+                              <option value="reconciliation">Reconciliation</option>
+                            </select>
+                          </div>
+                          <div className="mt-2 flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => recordDose(medication)}
+                              disabled={savingDoseId === medication.id}
+                              className="flex-1 rounded-lg bg-[#89b4fa] px-3 py-2 text-sm font-medium text-[#1e1e2e] transition hover:bg-[#74c7ec] disabled:opacity-50"
+                            >
+                              {savingDoseId === medication.id ? "Saving..." : "Log dose"}
+                            </button>
+                            {!medication.is_prn && (
+                              <button
+                                type="button"
+                                onClick={() => recordDose(medication, { doseType: "missed" })}
+                                disabled={savingDoseId === medication.id}
+                                className="rounded-lg border border-ctp-surface1 px-3 py-2 text-sm text-ctp-subtext1 transition hover:text-ctp-red disabled:opacity-50"
+                              >
+                                Missed
+                              </button>
+                            )}
+                          </div>
                         </div>
                       );
                     })}
