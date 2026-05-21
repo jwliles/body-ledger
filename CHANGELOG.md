@@ -8,6 +8,18 @@ All notable changes to this project will be documented in this file.
 
 - *(uncategorized)* Add web UI login/signup tabs, dashboard with medication adherence
 
+### 🐛 Bug Fixes
+
+- *(uncategorized)* Fixed the main layout problems:
+
+  - Empty desktop tables no longer render wide hidden columns that cause a useless scrollbar.
+  - Empty states now render as normal centered text blocks.
+  - Main container widened from max-w-6xl to max-w-7xl.
+  - Right rail narrowed from 380px to 340px.
+  - Header stacks better on phone.
+  - Mobile uses card-style stat sections; desktop uses tables.
+  - Removed the PWA portrait orientation lock so the installed app can rotate.
+
 ### ⚙️ Miscellaneous Tasks
 
 - *(files)* Update files

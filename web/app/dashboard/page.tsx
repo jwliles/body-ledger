@@ -27,12 +27,9 @@ type Medication = {
 
 type HealthEvent = {
   id: number;
+  metric_type: string;
   recorded_at: string;
-  payload: {
-    medication_id: number;
-    dose_mg: string | number;
-    dose_type: DoseType;
-  } | null;
+  payload: Record<string, string | number | null> | null;
 };
 
 type MedicationForm = {
@@ -49,7 +46,7 @@ type MedicationForm = {
   scheduledTimes: string;
 };
 
-type EntryKind = "medication_dose" | "blood_pressure" | "weight" | "sleep" | "steps";
+type EntryKind = "new_medication" | "medication_dose" | "blood_pressure" | "weight" | "sleep" | "steps";
 
 type EntryForm = {
   date: string;
@@ -201,7 +198,9 @@ function formatQuantity(quantity: number, medication: Medication): string {
 }
 
 function eventMedicationId(event: HealthEvent): number | null {
-  return event.payload?.medication_id ?? null;
+  if (event.metric_type !== "medication_dose") return null;
+  const medicationId = event.payload?.medication_id;
+  return typeof medicationId === "number" ? medicationId : Number(medicationId) || null;
 }
 
 function dailyExpectedDoses(medication: Medication): number | null {
@@ -213,7 +212,40 @@ function dailyExpectedDoses(medication: Medication): number | null {
 }
 
 function isTakenDose(event: HealthEvent): boolean {
-  return Boolean(event.payload && event.payload.dose_type !== "missed");
+  return Boolean(event.metric_type === "medication_dose" && event.payload && event.payload.dose_type !== "missed");
+}
+
+function eventDoseAmount(event: HealthEvent): string | number {
+  return event.payload?.dose_mg ?? 0;
+}
+
+function latestEvent(events: HealthEvent[], predicate: (event: HealthEvent) => boolean): HealthEvent | undefined {
+  return events.find(predicate);
+}
+
+function formatBloodPressure(event: HealthEvent | undefined): string {
+  if (!event?.payload) return "-";
+  const pulse = event.payload.pulse ? ` · ${event.payload.pulse} bpm` : "";
+  return `${event.payload.systolic}/${event.payload.diastolic}${pulse}`;
+}
+
+function formatWeight(event: HealthEvent | undefined): string {
+  if (!event?.payload) return "-";
+  if (event.payload.original_value) return `${formatNumber(event.payload.original_value, 1)} ${event.payload.original_unit ?? "lb"}`;
+
+  const kg = toNumber(event.payload.value_kg);
+  if (kg === null) return "-";
+  return `${formatNumber(kg * 2.2046226218, 1)} lb`;
+}
+
+function formatSleep(event: HealthEvent | undefined): string {
+  if (!event?.payload?.sleep_start || !event.payload.sleep_end) return "-";
+  return `${formatTimeOnly(String(event.payload.sleep_start))} - ${formatTimeOnly(String(event.payload.sleep_end))}`;
+}
+
+function formatSteps(event: HealthEvent | undefined): string {
+  if (!event?.payload?.steps) return "-";
+  return formatNumber(event.payload.steps, 0);
 }
 
 function formatAdherence(taken: number, expected: number | null): string {
@@ -250,8 +282,9 @@ export default function DashboardPage() {
   const [entryKind, setEntryKind] = useState<EntryKind>("medication_dose");
   const [entryForm, setEntryForm] = useState<EntryForm>(() => initialEntryForm());
   const [entryOpen, setEntryOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<HealthEvent | null>(null);
   const [loading, setLoading] = useState(true);
-  const [savingMedication, setSavingMedication] = useState(false);
   const [savingEntry, setSavingEntry] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -284,24 +317,100 @@ export default function DashboardPage() {
     return Object.fromEntries(medications.map((medication) => [medication.id, medication]));
   }, [medications]);
 
+  const doseEvents = useMemo(() => {
+    return events.filter((event) => event.metric_type === "medication_dose");
+  }, [events]);
+
+  const healthMetrics = useMemo(() => {
+    const amBp = latestEvent(
+      events,
+      (event) => event.metric_type === "blood_pressure" && event.payload?.reading_context === "wake",
+    );
+    const pmBp = latestEvent(
+      events,
+      (event) => event.metric_type === "blood_pressure" && event.payload?.reading_context === "sleep",
+    );
+    const weight = latestEvent(events, (event) => event.metric_type === "weight");
+    const sleep = latestEvent(events, (event) => event.metric_type === "sleep");
+    const steps = latestEvent(
+      events,
+      (event) => event.metric_type === "activity" && event.payload?.activity_type === "steps",
+    );
+
+    return [
+      {
+        label: "AM BP / HR",
+        value: formatBloodPressure(amBp),
+        meta: amBp ? formatTimeOnly(amBp.recorded_at) : "No wake reading",
+      },
+      {
+        label: "PM BP / HR",
+        value: formatBloodPressure(pmBp),
+        meta: pmBp ? formatTimeOnly(pmBp.recorded_at) : "No sleep reading",
+      },
+      {
+        label: "Weight",
+        value: formatWeight(weight),
+        meta: weight ? formatDateOnly(weight.recorded_at) : "No weight logged",
+      },
+      {
+        label: "Sleep",
+        value: formatSleep(sleep),
+        meta: sleep ? formatDateOnly(sleep.recorded_at) : "No sleep logged",
+      },
+      {
+        label: "Steps",
+        value: formatSteps(steps),
+        meta: steps ? formatDateOnly(steps.recorded_at) : "No steps logged",
+      },
+    ];
+  }, [events]);
+
+  const editableEvents = useMemo(() => {
+    return events.filter((event) => {
+      if (event.metric_type === "activity") return event.payload?.activity_type === "steps";
+      return ["medication_dose", "blood_pressure", "weight", "sleep"].includes(event.metric_type);
+    });
+  }, [events]);
+
+  function recordLabel(event: HealthEvent): string {
+    const payload = event.payload ?? {};
+
+    if (event.metric_type === "medication_dose") {
+      const medicationId = eventMedicationId(event);
+      return medicationId ? `Medication dose · ${medicationNames[medicationId] ?? "Medication"}` : "Medication dose";
+    }
+
+    if (event.metric_type === "blood_pressure") {
+      const context = payload.reading_context === "sleep" ? "PM" : "AM";
+      return `${context} BP / HR · ${formatBloodPressure(event)}`;
+    }
+
+    if (event.metric_type === "weight") return `Weight · ${formatWeight(event)}`;
+    if (event.metric_type === "sleep") return `Sleep · ${formatSleep(event)}`;
+    if (event.metric_type === "activity" && payload.activity_type === "steps") return `Steps · ${formatSteps(event)}`;
+
+    return "Record";
+  }
+
   const basicRows = useMemo(() => {
     return activeMedications.map((medication) => {
-      const medEvents = events.filter((event) => eventMedicationId(event) === medication.id);
+      const medEvents = doseEvents.filter((event) => eventMedicationId(event) === medication.id);
       const takenEvents = medEvents.filter(isTakenDose);
       const lastEvent = medEvents[0];
 
       return {
         medication,
         takenQty: takenEvents.reduce((sum, event) => {
-          return sum + (event.payload ? doseQuantity(event.payload.dose_mg, medication) : 0);
+          return sum + (event.payload ? doseQuantity(eventDoseAmount(event), medication) : 0);
         }, 0),
         lastQty: lastEvent?.payload
-          ? formatQuantity(doseQuantity(lastEvent.payload.dose_mg, medication), medication)
+          ? formatQuantity(doseQuantity(eventDoseAmount(lastEvent), medication), medication)
           : "-",
         lastAt: lastEvent ? formatDateTime(lastEvent.recorded_at) : "-",
       };
     });
-  }, [activeMedications, events]);
+  }, [activeMedications, doseEvents]);
 
   const adherenceRows = useMemo(() => {
     const nowMs = Date.now();
@@ -317,7 +426,7 @@ export default function DashboardPage() {
             isTakenDose(event) &&
             new Date(event.recorded_at).getTime() >= cutoff
           ) {
-            return sum + (event.payload ? doseQuantity(event.payload.dose_mg, medication) : 0);
+            return sum + (event.payload ? doseQuantity(eventDoseAmount(event), medication) : 0);
           }
           return sum;
         }, 0);
@@ -349,7 +458,7 @@ export default function DashboardPage() {
     try {
       const [medsRes, eventsRes] = await Promise.all([
         fetch(`${API}/api/v1/medications`, { headers }),
-        fetch(`${API}/api/v1/health_events?metric_type=medication_dose`, { headers }),
+        fetch(`${API}/api/v1/health_events`, { headers }),
       ]);
 
       if (!medsRes.ok || !eventsRes.ok) {
@@ -364,11 +473,11 @@ export default function DashboardPage() {
       }
 
       const meds: Medication[] = await medsRes.json();
-      const doseEvents: HealthEvent[] = await eventsRes.json();
+      const healthEvents: HealthEvent[] = await eventsRes.json();
 
-      doseEvents.sort((a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime());
+      healthEvents.sort((a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime());
       setMedications(meds);
-      setEvents(doseEvents);
+      setEvents(healthEvents);
     } catch {
       setError("Could not reach the server");
     } finally {
@@ -391,8 +500,9 @@ export default function DashboardPage() {
     router.replace("/");
   }
 
-  function openEntryModal(kind: EntryKind = "medication_dose") {
+  function openEntryModal(kind: EntryKind = activeMedications.length > 0 ? "medication_dose" : "new_medication") {
     const firstMedication = activeMedications[0];
+    setEditingEvent(null);
     setEntryKind(kind);
     setEntryForm({
       ...initialEntryForm(),
@@ -400,6 +510,71 @@ export default function DashboardPage() {
       doseMg: firstMedication ? medicationDefaultDose(firstMedication) : "",
       doseType: firstMedication?.is_prn ? "prn" : "scheduled",
     });
+    setError(null);
+    setEntryOpen(true);
+  }
+
+  function openEditModal(event: HealthEvent) {
+    const recordedAt = new Date(event.recorded_at);
+    const payload = event.payload ?? {};
+    const nextForm = {
+      ...initialEntryForm(),
+      date: recordedAt.toISOString().slice(0, 10),
+      time: recordedAt.toTimeString().slice(0, 5),
+    };
+
+    if (event.metric_type === "medication_dose") {
+      setEntryKind("medication_dose");
+      setEntryForm({
+        ...nextForm,
+        medicationId: String(payload.medication_id ?? ""),
+        doseMg: String(payload.dose_mg ?? ""),
+        doseType: (payload.dose_type as DoseType) ?? "scheduled",
+      });
+    }
+
+    if (event.metric_type === "blood_pressure") {
+      setEntryKind("blood_pressure");
+      setEntryForm({
+        ...nextForm,
+        readingContext: payload.reading_context === "sleep" ? "sleep" : "wake",
+        systolic: String(payload.systolic ?? ""),
+        diastolic: String(payload.diastolic ?? ""),
+        pulse: String(payload.pulse ?? ""),
+      });
+    }
+
+    if (event.metric_type === "weight") {
+      const kg = toNumber(payload.value_kg);
+      setEntryKind("weight");
+      setEntryForm({
+        ...nextForm,
+        weight: String(payload.original_value ?? (kg === null ? "" : formatNumber(kg * 2.2046226218, 1))),
+      });
+    }
+
+    if (event.metric_type === "sleep") {
+      const sleepStart = payload.sleep_start ? new Date(String(payload.sleep_start)) : recordedAt;
+      const sleepEnd = payload.sleep_end ? new Date(String(payload.sleep_end)) : recordedAt;
+      setEntryKind("sleep");
+      setEntryForm({
+        ...nextForm,
+        date: sleepEnd.toISOString().slice(0, 10),
+        bedtime: sleepStart.toTimeString().slice(0, 5),
+        wakeTime: sleepEnd.toTimeString().slice(0, 5),
+      });
+    }
+
+    if (event.metric_type === "activity" && payload.activity_type === "steps") {
+      setEntryKind("steps");
+      setEntryForm({
+        ...nextForm,
+        steps: String(payload.steps ?? ""),
+      });
+    }
+
+    setEditingEvent(event);
+    setEditOpen(false);
     setError(null);
     setEntryOpen(true);
   }
@@ -425,8 +600,9 @@ export default function DashboardPage() {
     recordedAt: string,
     payloadKey: string,
     payload: Record<string, string | number | null>,
+    eventId?: number,
   ) {
-    const res = await fetch(`${API}/api/v1/health_events`, {
+    const res = await fetch(`${API}/api/v1/health_events${eventId ? `/${eventId}/amend` : ""}`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -459,14 +635,21 @@ export default function DashboardPage() {
     }
 
     const recordedAt = dateTimeFromDateAndTime(entryForm.date, entryForm.time);
+    const amendEventId = editingEvent?.id;
 
     try {
+      if (entryKind === "new_medication") {
+        const saved = await createMedicationRecord(token);
+        if (saved) setEntryOpen(false);
+        return;
+      }
+
       if (entryKind === "medication_dose") {
         await createHealthEvent(token, "medication_dose", recordedAt, "medication_dose_payload", {
           medication_id: Number(entryForm.medicationId),
           dose_mg: entryForm.doseMg,
           dose_type: entryForm.doseType,
-        });
+        }, amendEventId);
       }
 
       if (entryKind === "blood_pressure") {
@@ -475,7 +658,7 @@ export default function DashboardPage() {
           diastolic: entryForm.diastolic,
           pulse: entryForm.pulse || null,
           reading_context: entryForm.readingContext,
-        });
+        }, amendEventId);
       }
 
       if (entryKind === "weight") {
@@ -484,7 +667,7 @@ export default function DashboardPage() {
           value_kg: weightKg,
           original_unit: "lb",
           original_value: entryForm.weight,
-        });
+        }, amendEventId);
       }
 
       if (entryKind === "sleep") {
@@ -492,7 +675,7 @@ export default function DashboardPage() {
         await createHealthEvent(token, "sleep", sleep.end, "sleep_payload", {
           sleep_start: sleep.start,
           sleep_end: sleep.end,
-        });
+        }, amendEventId);
       }
 
       if (entryKind === "steps") {
@@ -500,9 +683,10 @@ export default function DashboardPage() {
           activity_type: "steps",
           duration_minutes: 1,
           steps: entryForm.steps,
-        });
+        }, amendEventId);
       }
 
+      setEditingEvent(null);
       setEntryOpen(false);
       await fetchData();
     } catch (err) {
@@ -512,17 +696,7 @@ export default function DashboardPage() {
     }
   }
 
-  async function createMedication(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setSavingMedication(true);
-
-    const token = localStorage.getItem("device_token");
-    if (!token) {
-      router.replace("/");
-      return;
-    }
-
+  async function createMedicationRecord(token: string): Promise<boolean> {
     const scheduledTimes = parseScheduledTimes(medicationForm.scheduledTimes);
     const strength = `${medicationForm.strengthPerForm}${medicationForm.doseUnit} ${medicationForm.medForm}`;
 
@@ -554,15 +728,15 @@ export default function DashboardPage() {
 
       if (!res.ok) {
         setError(await parseApiError(res));
-        return;
+        return false;
       }
 
       setMedicationForm(initialMedicationForm);
       await fetchData();
+      return true;
     } catch {
       setError("Could not reach the server");
-    } finally {
-      setSavingMedication(false);
+      return false;
     }
   }
 
@@ -582,22 +756,46 @@ export default function DashboardPage() {
       <main className="flex-1 px-3 py-4 sm:px-6 sm:py-5">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-base font-medium text-ctp-subtext1">Medication Adherence</h2>
-            <button
-              type="button"
-              onClick={() => openEntryModal()}
-              className="rounded-lg bg-[#89b4fa] px-4 py-2 text-sm font-medium text-[#1e1e2e] transition hover:bg-[#74c7ec]"
-            >
-              Add data
-            </button>
+            <h2 className="text-base font-medium text-ctp-subtext1">Health Dashboard</h2>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => openEntryModal()}
+                className="rounded-lg bg-[#89b4fa] px-4 py-2 text-sm font-medium text-[#1e1e2e] transition hover:bg-[#74c7ec]"
+              >
+                Add record
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditOpen(true)}
+                className="rounded-lg border border-ctp-surface1 px-4 py-2 text-sm font-medium text-ctp-text transition hover:border-ctp-blue"
+              >
+                Edit records
+              </button>
+            </div>
           </div>
 
           {loading && <p className="text-sm text-ctp-overlay0">Loading...</p>}
           {error && <p className="text-sm text-ctp-red">{error}</p>}
 
           {!loading && (
-            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+            <div className="grid gap-5">
               <section className="flex min-w-0 flex-col gap-5">
+                <section className="rounded-xl border border-ctp-surface0 bg-ctp-base">
+                  <div className="border-b border-ctp-surface0 px-4 py-3">
+                    <h3 className="text-base font-medium text-ctp-text">Health Metrics</h3>
+                  </div>
+                  <div className="grid gap-px bg-ctp-surface0 sm:grid-cols-2 lg:grid-cols-5">
+                    {healthMetrics.map((metric) => (
+                      <div key={metric.label} className="bg-ctp-base p-4">
+                        <p className="text-xs font-medium uppercase tracking-wide text-ctp-overlay0">{metric.label}</p>
+                        <p className="mt-2 text-lg font-semibold text-ctp-text">{metric.value}</p>
+                        <p className="mt-1 text-xs text-ctp-subtext0">{metric.meta}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
                 <section className="rounded-xl border border-ctp-surface0 bg-ctp-base">
                   <div className="border-b border-ctp-surface0 px-4 py-3">
                     <h3 className="text-base font-medium text-ctp-text">Basic Med Info</h3>
@@ -741,30 +939,32 @@ export default function DashboardPage() {
                     <h3 className="text-base font-medium text-ctp-text">Recent Dose Logs</h3>
                   </div>
                   <div className="divide-y divide-ctp-surface0 md:hidden">
-                    {events.slice(0, 20).length === 0 && (
+                    {doseEvents.slice(0, 20).length === 0 && (
                       <p className="px-4 py-4 text-center text-sm text-ctp-overlay0">No doses recorded yet.</p>
                     )}
-                    {events.slice(0, 20).map((event) => {
+                    {doseEvents.slice(0, 20).map((event) => {
                       const payload = event.payload;
                       if (!payload) return null;
-                      const medication = medicationById[payload.medication_id];
+                      const medicationId = eventMedicationId(event);
+                      if (!medicationId) return null;
+                      const medication = medicationById[medicationId];
 
                       return (
                         <div key={event.id} className="p-4">
                           <p className="text-sm font-medium text-ctp-text">
-                            {medicationNames[payload.medication_id] ?? "Medication"}
+                            {medicationNames[medicationId] ?? "Medication"}
                           </p>
                           <p className="mt-1 text-xs text-ctp-overlay0">
                             {formatDateOnly(event.recorded_at)} {formatTimeOnly(event.recorded_at)}
                           </p>
                           <p className="mt-2 text-sm text-ctp-subtext0">
-                            {medication ? formatQuantity(doseQuantity(payload.dose_mg, medication), medication) : "-"} · {payload.dose_type}
+                            {medication ? formatQuantity(doseQuantity(eventDoseAmount(event), medication), medication) : "-"} · {payload.dose_type}
                           </p>
                         </div>
                       );
                     })}
                   </div>
-                  {events.slice(0, 20).length === 0 ? (
+                  {doseEvents.slice(0, 20).length === 0 ? (
                     <p className="hidden px-4 py-6 text-center text-sm text-ctp-overlay0 md:block">
                       No doses recorded yet.
                     </p>
@@ -781,18 +981,20 @@ export default function DashboardPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {events.slice(0, 20).map((event, index) => {
+                        {doseEvents.slice(0, 20).map((event, index) => {
                           const payload = event.payload;
                           if (!payload) return null;
-                          const medication = medicationById[payload.medication_id];
+                          const medicationId = eventMedicationId(event);
+                          if (!medicationId) return null;
+                          const medication = medicationById[medicationId];
 
                           return (
                             <tr key={event.id} className={index % 2 === 0 ? "bg-ctp-base" : "bg-ctp-mantle"}>
                               <td className="px-4 py-3 text-ctp-subtext0">{formatDateOnly(event.recorded_at)}</td>
                               <td className="px-4 py-3 text-ctp-subtext0">{formatTimeOnly(event.recorded_at)}</td>
-                              <td className="px-4 py-3 text-ctp-text">{medicationNames[payload.medication_id] ?? "Medication"}</td>
+                              <td className="px-4 py-3 text-ctp-text">{medicationNames[medicationId] ?? "Medication"}</td>
                               <td className="px-4 py-3 text-ctp-subtext0">
-                                {medication ? formatQuantity(doseQuantity(payload.dose_mg, medication), medication) : "-"}
+                                {medication ? formatQuantity(doseQuantity(eventDoseAmount(event), medication), medication) : "-"}
                               </td>
                               <td className="px-4 py-3 text-ctp-subtext0">{payload.dose_type}</td>
                             </tr>
@@ -805,149 +1007,6 @@ export default function DashboardPage() {
                 </section>
               </section>
 
-              <aside className="flex flex-col gap-5">
-                <form
-                  onSubmit={createMedication}
-                  className="rounded-xl border border-ctp-surface0 bg-ctp-base p-4"
-                >
-                  <h3 className="mb-4 text-base font-medium text-ctp-text">Add medication</h3>
-                  <div className="flex flex-col gap-3">
-                    <input
-                      aria-label="Medication name"
-                      required
-                      value={medicationForm.name}
-                      onChange={(e) => setMedicationForm((form) => ({ ...form, name: e.target.value }))}
-                      className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
-                      placeholder="Medication name, e.g. lisinopril"
-                    />
-                    <div className="grid grid-cols-[1fr_84px] gap-2">
-                      <input
-                        aria-label="Strength per form"
-                        required
-                        type="number"
-                        min="0"
-                        step="0.001"
-                        value={medicationForm.strengthPerForm}
-                        onChange={(e) => setMedicationForm((form) => ({ ...form, strengthPerForm: e.target.value }))}
-                        className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
-                        placeholder="Strength per form, e.g. 10"
-                      />
-                      <input
-                        aria-label="Dose unit"
-                        required
-                        value={medicationForm.doseUnit}
-                        onChange={(e) => setMedicationForm((form) => ({ ...form, doseUnit: e.target.value }))}
-                        className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
-                        placeholder="mg"
-                      />
-                    </div>
-                    <input
-                      aria-label="Medication form"
-                      required
-                      value={medicationForm.medForm}
-                      onChange={(e) => setMedicationForm((form) => ({ ...form, medForm: e.target.value }))}
-                      className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
-                      placeholder="Form, e.g. tab"
-                    />
-                    <input
-                      aria-label="Dosage"
-                      required
-                      type="number"
-                      min="0"
-                      step="0.001"
-                      value={medicationForm.dosage}
-                      onChange={(e) => setMedicationForm((form) => ({ ...form, dosage: e.target.value }))}
-                      className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
-                      placeholder="Dosage, e.g. 15"
-                    />
-                    <div className="grid grid-cols-2 gap-2">
-                      <input
-                        aria-label="Date started"
-                        type="date"
-                        value={medicationForm.dateStarted}
-                        onChange={(e) => setMedicationForm((form) => ({ ...form, dateStarted: e.target.value }))}
-                        className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
-                      />
-                      <input
-                        aria-label="Prescription date"
-                        type="date"
-                        value={medicationForm.rxDate}
-                        onChange={(e) => setMedicationForm((form) => ({ ...form, rxDate: e.target.value }))}
-                        className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <input
-                        aria-label="Prescription quantity"
-                        type="number"
-                        min="0"
-                        step="0.001"
-                        value={medicationForm.rxQty}
-                        onChange={(e) => setMedicationForm((form) => ({ ...form, rxQty: e.target.value }))}
-                        className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
-                        placeholder="Rx qty"
-                      />
-                      <input
-                        aria-label="Prescription quantity per day"
-                        type="number"
-                        min="0"
-                        step="0.001"
-                        value={medicationForm.rxPerDay}
-                        onChange={(e) => setMedicationForm((form) => ({ ...form, rxPerDay: e.target.value }))}
-                        className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
-                        placeholder="Rx per day"
-                      />
-                    </div>
-                    <label className="flex items-center gap-2 text-sm text-ctp-subtext1">
-                      <input
-                        type="checkbox"
-                        checked={medicationForm.isPrn}
-                        onChange={(e) => setMedicationForm((form) => ({ ...form, isPrn: e.target.checked }))}
-                        className="h-4 w-4 accent-[#89b4fa]"
-                      />
-                      Taken as needed
-                    </label>
-                    {!medicationForm.isPrn && (
-                      <input
-                        aria-label="Scheduled times"
-                        required
-                        value={medicationForm.scheduledTimes}
-                        onChange={(e) => setMedicationForm((form) => ({ ...form, scheduledTimes: e.target.value }))}
-                        className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
-                        placeholder="Scheduled times, e.g. 08:00, 20:00"
-                      />
-                    )}
-                    <button
-                      type="submit"
-                      disabled={savingMedication}
-                      className="rounded-lg bg-[#89b4fa] px-4 py-2 text-sm font-medium text-[#1e1e2e] transition hover:bg-[#74c7ec] disabled:opacity-50"
-                    >
-                      {savingMedication ? "Adding..." : "Add medication"}
-                    </button>
-                  </div>
-                </form>
-
-                <section className="rounded-xl border border-ctp-surface0 bg-ctp-base p-4">
-                  <h3 className="mb-3 text-base font-medium text-ctp-text">Entry shortcuts</h3>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button type="button" onClick={() => openEntryModal("medication_dose")} className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text hover:bg-ctp-surface2">
-                      Meds
-                    </button>
-                    <button type="button" onClick={() => openEntryModal("blood_pressure")} className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text hover:bg-ctp-surface2">
-                      BP / HR
-                    </button>
-                    <button type="button" onClick={() => openEntryModal("weight")} className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text hover:bg-ctp-surface2">
-                      Weight
-                    </button>
-                    <button type="button" onClick={() => openEntryModal("sleep")} className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text hover:bg-ctp-surface2">
-                      Sleep
-                    </button>
-                    <button type="button" onClick={() => openEntryModal("steps")} className="col-span-2 rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text hover:bg-ctp-surface2">
-                      Steps
-                    </button>
-                  </div>
-                </section>
-              </aside>
             </div>
           )}
         </div>
@@ -960,10 +1019,13 @@ export default function DashboardPage() {
             className="max-h-[92vh] w-full overflow-y-auto rounded-t-xl border border-ctp-surface0 bg-ctp-base p-4 shadow-xl sm:max-w-lg sm:rounded-xl sm:p-5"
           >
             <div className="mb-4 flex items-center justify-between gap-4">
-              <h3 className="text-lg font-medium text-ctp-text">Add data</h3>
+              <h3 className="text-lg font-medium text-ctp-text">{editingEvent ? "Edit record" : "Add record"}</h3>
               <button
                 type="button"
-                onClick={() => setEntryOpen(false)}
+                onClick={() => {
+                  setEntryOpen(false);
+                  setEditingEvent(null);
+                }}
                 className="rounded-lg border border-ctp-surface1 px-3 py-1.5 text-sm text-ctp-subtext1 hover:text-ctp-text"
               >
                 Close
@@ -974,9 +1036,11 @@ export default function DashboardPage() {
               <select
                 aria-label="Data type"
                 value={entryKind}
+                disabled={Boolean(editingEvent)}
                 onChange={(e) => changeEntryKind(e.target.value as EntryKind)}
-                className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
+                className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue disabled:opacity-70"
               >
+                {!editingEvent && <option value="new_medication">New medication</option>}
                 <option value="medication_dose">Medication dose</option>
                 <option value="blood_pressure">Blood pressure / heart rate</option>
                 <option value="weight">Weight</option>
@@ -984,26 +1048,138 @@ export default function DashboardPage() {
                 <option value="steps">Steps</option>
               </select>
 
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  aria-label="Entry date"
-                  type="date"
-                  required
-                  value={entryForm.date}
-                  onChange={(e) => setEntryForm((form) => ({ ...form, date: e.target.value }))}
-                  className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
-                />
-                {entryKind !== "sleep" && (
+              {entryKind === "new_medication" && (
+                <>
                   <input
-                    aria-label="Entry time"
-                    type="time"
+                    aria-label="Medication name"
                     required
-                    value={entryForm.time}
-                    onChange={(e) => setEntryForm((form) => ({ ...form, time: e.target.value }))}
+                    value={medicationForm.name}
+                    onChange={(e) => setMedicationForm((form) => ({ ...form, name: e.target.value }))}
+                    className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
+                    placeholder="Medication name, e.g. lisinopril"
+                  />
+                  <div className="grid grid-cols-[1fr_84px] gap-2">
+                    <input
+                      aria-label="Strength per form"
+                      required
+                      type="number"
+                      min="0"
+                      step="0.001"
+                      value={medicationForm.strengthPerForm}
+                      onChange={(e) => setMedicationForm((form) => ({ ...form, strengthPerForm: e.target.value }))}
+                      className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
+                      placeholder="Strength per form, e.g. 10"
+                    />
+                    <input
+                      aria-label="Dose unit"
+                      required
+                      value={medicationForm.doseUnit}
+                      onChange={(e) => setMedicationForm((form) => ({ ...form, doseUnit: e.target.value }))}
+                      className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
+                      placeholder="mg"
+                    />
+                  </div>
+                  <input
+                    aria-label="Medication form"
+                    required
+                    value={medicationForm.medForm}
+                    onChange={(e) => setMedicationForm((form) => ({ ...form, medForm: e.target.value }))}
+                    className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
+                    placeholder="Form, e.g. tab"
+                  />
+                  <input
+                    aria-label="Dosage"
+                    required
+                    type="number"
+                    min="0"
+                    step="0.001"
+                    value={medicationForm.dosage}
+                    onChange={(e) => setMedicationForm((form) => ({ ...form, dosage: e.target.value }))}
+                    className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
+                    placeholder="Dosage, e.g. 15"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      aria-label="Date started"
+                      type="date"
+                      value={medicationForm.dateStarted}
+                      onChange={(e) => setMedicationForm((form) => ({ ...form, dateStarted: e.target.value }))}
+                      className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
+                    />
+                    <input
+                      aria-label="Prescription date"
+                      type="date"
+                      value={medicationForm.rxDate}
+                      onChange={(e) => setMedicationForm((form) => ({ ...form, rxDate: e.target.value }))}
+                      className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      aria-label="Prescription quantity"
+                      type="number"
+                      min="0"
+                      step="0.001"
+                      value={medicationForm.rxQty}
+                      onChange={(e) => setMedicationForm((form) => ({ ...form, rxQty: e.target.value }))}
+                      className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
+                      placeholder="Rx qty"
+                    />
+                    <input
+                      aria-label="Prescription quantity per day"
+                      type="number"
+                      min="0"
+                      step="0.001"
+                      value={medicationForm.rxPerDay}
+                      onChange={(e) => setMedicationForm((form) => ({ ...form, rxPerDay: e.target.value }))}
+                      className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
+                      placeholder="Rx per day"
+                    />
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-ctp-subtext1">
+                    <input
+                      type="checkbox"
+                      checked={medicationForm.isPrn}
+                      onChange={(e) => setMedicationForm((form) => ({ ...form, isPrn: e.target.checked }))}
+                      className="h-4 w-4 accent-[#89b4fa]"
+                    />
+                    Taken as needed
+                  </label>
+                  {!medicationForm.isPrn && (
+                    <input
+                      aria-label="Scheduled times"
+                      required
+                      value={medicationForm.scheduledTimes}
+                      onChange={(e) => setMedicationForm((form) => ({ ...form, scheduledTimes: e.target.value }))}
+                      className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
+                      placeholder="Scheduled times, e.g. 08:00, 20:00"
+                    />
+                  )}
+                </>
+              )}
+
+              {entryKind !== "new_medication" && (
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    aria-label="Entry date"
+                    type="date"
+                    required
+                    value={entryForm.date}
+                    onChange={(e) => setEntryForm((form) => ({ ...form, date: e.target.value }))}
                     className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
                   />
-                )}
-              </div>
+                  {entryKind !== "sleep" && (
+                    <input
+                      aria-label="Entry time"
+                      type="time"
+                      required
+                      value={entryForm.time}
+                      onChange={(e) => setEntryForm((form) => ({ ...form, time: e.target.value }))}
+                      className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
+                    />
+                  )}
+                </div>
+              )}
 
               {entryKind === "medication_dose" && (
                 <>
@@ -1155,10 +1331,47 @@ export default function DashboardPage() {
                 disabled={savingEntry}
                 className="mt-1 rounded-lg bg-[#89b4fa] px-4 py-2 text-sm font-medium text-[#1e1e2e] transition hover:bg-[#74c7ec] disabled:opacity-50"
               >
-                {savingEntry ? "Saving..." : "Save"}
+                {savingEntry ? "Saving..." : editingEvent ? "Save correction" : "Save"}
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {editOpen && (
+        <div className="fixed inset-0 z-50 flex items-end bg-black/70 p-0 sm:items-center sm:justify-center sm:p-6">
+          <section className="max-h-[92vh] w-full overflow-y-auto rounded-t-xl border border-ctp-surface0 bg-ctp-base p-4 shadow-xl sm:max-w-2xl sm:rounded-xl sm:p-5">
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <h3 className="text-lg font-medium text-ctp-text">Edit records</h3>
+              <button
+                type="button"
+                onClick={() => setEditOpen(false)}
+                className="rounded-lg border border-ctp-surface1 px-3 py-1.5 text-sm text-ctp-subtext1 hover:text-ctp-text"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="divide-y divide-ctp-surface0 overflow-hidden rounded-lg border border-ctp-surface0">
+              {editableEvents.length === 0 && (
+                <p className="px-4 py-5 text-center text-sm text-ctp-overlay0">No records yet.</p>
+              )}
+              {editableEvents.slice(0, 30).map((event) => (
+                <button
+                  key={event.id}
+                  type="button"
+                  onClick={() => openEditModal(event)}
+                  className="flex w-full items-center justify-between gap-4 bg-ctp-base px-4 py-3 text-left transition hover:bg-ctp-mantle"
+                >
+                  <span>
+                    <span className="block text-sm font-medium text-ctp-text">{recordLabel(event)}</span>
+                    <span className="mt-1 block text-xs text-ctp-overlay0">{formatDateTime(event.recorded_at)}</span>
+                  </span>
+                  <span className="text-sm text-ctp-blue">Edit</span>
+                </button>
+              ))}
+            </div>
+          </section>
         </div>
       )}
 
