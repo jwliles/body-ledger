@@ -26,6 +26,8 @@ npm run start
 
 Chrome requires the app to be served from HTTPS for install prompts, except on `localhost`.
 
+This app uses Next standalone output. `npm run build` also copies `public/` and `.next/static/` into `.next/standalone/` so the systemd service can serve the manifest, service worker, icons, and built assets from `node .next/standalone/server.js`.
+
 ## What's Built
 
 - **Auth page** (`/`) — login and signup tabs, TOTP input field
