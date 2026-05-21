@@ -16,6 +16,10 @@ All notable changes to this project will be documented in this file.
 
 ### 📦 Other
 
+- *(uncategorized)* Reshaped the dashboard
+- *(uncategorized)* Add medication and dose logging workflow
+- *(uncategorized)* Prepare static assets for standalone deploy
+- *(uncategorized)* Add PWA support and TOTP setup flow
 - *(uncategorized)* Fix zxcvbn feedback hash access in password validator
 - *(uncategorized)* Simplify production DB config to single database
 - *(uncategorized)* Fix production DB connection to use TCP

@@ -14,6 +14,13 @@ type Medication = {
   is_prn: boolean;
   scheduled_times: string[] | null;
   pill_size_mg: string | number | null;
+  date_started: string | null;
+  rx_date: string | null;
+  rx_qty: string | number | null;
+  rx_per_day: string | number | null;
+  dosage: string | number | null;
+  dose_unit: string;
+  med_form: string | null;
   is_active: boolean;
   created_at: string;
 };
@@ -30,35 +37,69 @@ type HealthEvent = {
 
 type MedicationForm = {
   name: string;
-  strength: string;
+  medForm: string;
+  strengthPerForm: string;
+  dosage: string;
+  doseUnit: string;
+  dateStarted: string;
+  rxDate: string;
+  rxQty: string;
+  rxPerDay: string;
   isPrn: boolean;
   scheduledTimes: string;
-  pillSizeMg: string;
 };
 
-type DoseForm = {
+type EntryKind = "medication_dose" | "blood_pressure" | "weight" | "sleep" | "steps";
+
+type EntryForm = {
+  date: string;
+  time: string;
+  medicationId: string;
   doseMg: string;
   doseType: DoseType;
+  readingContext: "wake" | "sleep";
+  systolic: string;
+  diastolic: string;
+  pulse: string;
+  weight: string;
+  wakeTime: string;
+  bedtime: string;
+  steps: string;
 };
+
+function todayInputValue(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 const initialMedicationForm: MedicationForm = {
   name: "",
-  strength: "",
+  medForm: "tab",
+  strengthPerForm: "",
+  dosage: "",
+  doseUnit: "mg",
+  dateStarted: "",
+  rxDate: "",
+  rxQty: "",
+  rxPerDay: "",
   isPrn: false,
   scheduledTimes: "08:00",
-  pillSizeMg: "",
 };
 
-function timeAgo(dateStr: string): string {
-  const diffMs = Date.now() - new Date(dateStr).getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  if (diffMins < 1) return "just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHrs = Math.floor(diffMins / 60);
-  if (diffHrs < 24) return `${diffHrs}h ago`;
-  const diffDays = Math.floor(diffHrs / 24);
-  return `${diffDays}d ago`;
-}
+const initialEntryForm = (): EntryForm => ({
+  date: todayInputValue(),
+  time: new Date().toTimeString().slice(0, 5),
+  medicationId: "",
+  doseMg: "",
+  doseType: "scheduled",
+  readingContext: "wake",
+  systolic: "",
+  diastolic: "",
+  pulse: "",
+  weight: "",
+  wakeTime: "",
+  bedtime: "",
+  steps: "",
+});
 
 function formatTime(d: Date): string {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -68,7 +109,8 @@ function formatDate(d: Date): string {
   return d.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
 }
 
-function formatDateOnly(dateStr: string): string {
+function formatDateOnly(dateStr: string | null): string {
+  if (!dateStr) return "-";
   return new Date(dateStr).toLocaleDateString([], {
     year: "numeric",
     month: "2-digit",
@@ -87,9 +129,9 @@ function formatDateTime(dateStr: string): string {
   return `${formatDateOnly(dateStr)} ${formatTimeOnly(dateStr)}`;
 }
 
-function formatDose(value: string | number): string {
+function formatDose(value: string | number, unit = "mg"): string {
   const dose = Number(value);
-  return Number.isFinite(dose) ? `${dose} mg` : `${value} mg`;
+  return Number.isFinite(dose) ? `${dose} ${unit}` : `${value} ${unit}`;
 }
 
 function parseScheduledTimes(value: string): string[] {
@@ -99,11 +141,63 @@ function parseScheduledTimes(value: string): string[] {
     .filter(Boolean);
 }
 
+function minutesFromTime(value: string): number | null {
+  const [hours, minutes] = value.split(":").map(Number);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  return hours * 60 + minutes;
+}
+
+function dateTimeFromDateAndTime(date: string, time: string): string {
+  return new Date(`${date}T${time || "12:00"}:00`).toISOString();
+}
+
+function sleepDateTimes(date: string, bedtime: string, wakeTime: string): { start: string; end: string } {
+  const wakeMinutes = minutesFromTime(wakeTime) ?? 0;
+  const bedMinutes = minutesFromTime(bedtime) ?? 0;
+  const bedDate = new Date(`${date}T00:00:00`);
+
+  if (bedMinutes > wakeMinutes) {
+    bedDate.setDate(bedDate.getDate() - 1);
+  }
+
+  return {
+    start: new Date(`${bedDate.toISOString().slice(0, 10)}T${bedtime}:00`).toISOString(),
+    end: dateTimeFromDateAndTime(date, wakeTime),
+  };
+}
+
 function medicationDefaultDose(medication: Medication): string {
+  if (medication.dosage) return String(medication.dosage);
   if (medication.pill_size_mg) return String(medication.pill_size_mg);
 
   const match = medication.strength.match(/(\d+(?:\.\d+)?)\s*mg/i);
   return match?.[1] ?? "";
+}
+
+function toNumber(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function formatNumber(value: number | string | null | undefined, digits = 3): string {
+  const number = toNumber(value);
+  if (number === null) return "-";
+  return Number(number.toFixed(digits)).toString();
+}
+
+function doseQuantity(doseAmount: string | number, medication: Medication): number {
+  const dose = toNumber(doseAmount);
+  const strengthPerForm = toNumber(medication.pill_size_mg);
+  if (dose === null) return 0;
+  if (!strengthPerForm) return 1;
+  return dose / strengthPerForm;
+}
+
+function formatQuantity(quantity: number, medication: Medication): string {
+  const rounded = Number(quantity.toFixed(3)).toString();
+  const form = medication.med_form ?? "unit";
+  return `${rounded} ${form}${quantity === 1 ? "" : "s"}`;
 }
 
 function eventMedicationId(event: HealthEvent): number | null {
@@ -112,6 +206,8 @@ function eventMedicationId(event: HealthEvent): number | null {
 
 function dailyExpectedDoses(medication: Medication): number | null {
   if (medication.is_prn) return null;
+  const rxPerDay = toNumber(medication.rx_per_day);
+  if (rxPerDay) return rxPerDay;
   const count = medication.scheduled_times?.filter(Boolean).length ?? 0;
   return Math.max(1, count);
 }
@@ -123,6 +219,13 @@ function isTakenDose(event: HealthEvent): boolean {
 function formatAdherence(taken: number, expected: number | null): string {
   if (!expected) return "PRN";
   return `${Math.round((taken / expected) * 100)}%`;
+}
+
+function medicationStrengthLabel(medication: Medication): string {
+  const strength = medication.pill_size_mg
+    ? formatDose(medication.pill_size_mg, medication.dose_unit)
+    : medication.strength;
+  return `${strength} per ${medication.med_form ?? "form"}`;
 }
 
 async function parseApiError(response: Response): Promise<string> {
@@ -144,10 +247,12 @@ export default function DashboardPage() {
   const [medications, setMedications] = useState<Medication[]>([]);
   const [events, setEvents] = useState<HealthEvent[]>([]);
   const [medicationForm, setMedicationForm] = useState<MedicationForm>(initialMedicationForm);
-  const [doseForms, setDoseForms] = useState<Record<number, DoseForm>>({});
+  const [entryKind, setEntryKind] = useState<EntryKind>("medication_dose");
+  const [entryForm, setEntryForm] = useState<EntryForm>(() => initialEntryForm());
+  const [entryOpen, setEntryOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [savingMedication, setSavingMedication] = useState(false);
-  const [savingDoseId, setSavingDoseId] = useState<number | null>(null);
+  const [savingEntry, setSavingEntry] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const activeMedications = useMemo(
@@ -175,6 +280,10 @@ export default function DashboardPage() {
     return Object.fromEntries(medications.map((medication) => [medication.id, medication.name]));
   }, [medications]);
 
+  const medicationById = useMemo(() => {
+    return Object.fromEntries(medications.map((medication) => [medication.id, medication]));
+  }, [medications]);
+
   const basicRows = useMemo(() => {
     return activeMedications.map((medication) => {
       const medEvents = events.filter((event) => eventMedicationId(event) === medication.id);
@@ -183,8 +292,12 @@ export default function DashboardPage() {
 
       return {
         medication,
-        taken: takenEvents.length,
-        lastQty: lastEvent?.payload ? formatDose(lastEvent.payload.dose_mg) : "-",
+        takenQty: takenEvents.reduce((sum, event) => {
+          return sum + (event.payload ? doseQuantity(event.payload.dose_mg, medication) : 0);
+        }, 0),
+        lastQty: lastEvent?.payload
+          ? formatQuantity(doseQuantity(lastEvent.payload.dose_mg, medication), medication)
+          : "-",
         lastAt: lastEvent ? formatDateTime(lastEvent.recorded_at) : "-",
       };
     });
@@ -198,13 +311,16 @@ export default function DashboardPage() {
 
       const takenInWindow = (days: number) => {
         const cutoff = nowMs - days * 24 * 60 * 60 * 1000;
-        return events.filter((event) => {
-          return (
+        return events.reduce((sum, event) => {
+          if (
             eventMedicationId(event) === medication.id &&
             isTakenDose(event) &&
             new Date(event.recorded_at).getTime() >= cutoff
-          );
-        }).length;
+          ) {
+            return sum + (event.payload ? doseQuantity(event.payload.dose_mg, medication) : 0);
+          }
+          return sum;
+        }, 0);
       };
 
       const taken7 = takenInWindow(7);
@@ -253,16 +369,6 @@ export default function DashboardPage() {
       doseEvents.sort((a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime());
       setMedications(meds);
       setEvents(doseEvents);
-      setDoseForms((currentForms) => {
-        const nextForms = { ...currentForms };
-        for (const medication of meds) {
-          nextForms[medication.id] ??= {
-            doseMg: medicationDefaultDose(medication),
-            doseType: medication.is_prn ? "prn" : "scheduled",
-          };
-        }
-        return nextForms;
-      });
     } catch {
       setError("Could not reach the server");
     } finally {
@@ -285,6 +391,127 @@ export default function DashboardPage() {
     router.replace("/");
   }
 
+  function openEntryModal(kind: EntryKind = "medication_dose") {
+    const firstMedication = activeMedications[0];
+    setEntryKind(kind);
+    setEntryForm({
+      ...initialEntryForm(),
+      medicationId: firstMedication ? String(firstMedication.id) : "",
+      doseMg: firstMedication ? medicationDefaultDose(firstMedication) : "",
+      doseType: firstMedication?.is_prn ? "prn" : "scheduled",
+    });
+    setError(null);
+    setEntryOpen(true);
+  }
+
+  function changeEntryKind(kind: EntryKind) {
+    const firstMedication = activeMedications[0];
+    setEntryKind(kind);
+    setEntryForm((form) => ({
+      ...form,
+      medicationId: form.medicationId || (firstMedication ? String(firstMedication.id) : ""),
+      doseMg: form.doseMg || (firstMedication ? medicationDefaultDose(firstMedication) : ""),
+      doseType: firstMedication?.is_prn ? "prn" : form.doseType,
+    }));
+  }
+
+  function selectedEntryMedication(): Medication | undefined {
+    return medicationById[Number(entryForm.medicationId)];
+  }
+
+  async function createHealthEvent(
+    token: string,
+    metricType: string,
+    recordedAt: string,
+    payloadKey: string,
+    payload: Record<string, string | number | null>,
+  ) {
+    const res = await fetch(`${API}/api/v1/health_events`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        health_event: {
+          metric_type: metricType,
+          recorded_at: recordedAt,
+          client_uuid: crypto.randomUUID(),
+          [payloadKey]: payload,
+        },
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error(await parseApiError(res));
+    }
+  }
+
+  async function saveEntry(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSavingEntry(true);
+
+    const token = localStorage.getItem("device_token");
+    if (!token) {
+      router.replace("/");
+      return;
+    }
+
+    const recordedAt = dateTimeFromDateAndTime(entryForm.date, entryForm.time);
+
+    try {
+      if (entryKind === "medication_dose") {
+        await createHealthEvent(token, "medication_dose", recordedAt, "medication_dose_payload", {
+          medication_id: Number(entryForm.medicationId),
+          dose_mg: entryForm.doseMg,
+          dose_type: entryForm.doseType,
+        });
+      }
+
+      if (entryKind === "blood_pressure") {
+        await createHealthEvent(token, "blood_pressure", recordedAt, "blood_pressure_payload", {
+          systolic: entryForm.systolic,
+          diastolic: entryForm.diastolic,
+          pulse: entryForm.pulse || null,
+          reading_context: entryForm.readingContext,
+        });
+      }
+
+      if (entryKind === "weight") {
+        const weightKg = Number(entryForm.weight) * 0.45359237;
+        await createHealthEvent(token, "weight", recordedAt, "weight_payload", {
+          value_kg: weightKg,
+          original_unit: "lb",
+          original_value: entryForm.weight,
+        });
+      }
+
+      if (entryKind === "sleep") {
+        const sleep = sleepDateTimes(entryForm.date, entryForm.bedtime, entryForm.wakeTime);
+        await createHealthEvent(token, "sleep", sleep.end, "sleep_payload", {
+          sleep_start: sleep.start,
+          sleep_end: sleep.end,
+        });
+      }
+
+      if (entryKind === "steps") {
+        await createHealthEvent(token, "activity", recordedAt, "activity_payload", {
+          activity_type: "steps",
+          duration_minutes: 1,
+          steps: entryForm.steps,
+        });
+      }
+
+      setEntryOpen(false);
+      await fetchData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save entry");
+    } finally {
+      setSavingEntry(false);
+    }
+  }
+
   async function createMedication(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -297,6 +524,7 @@ export default function DashboardPage() {
     }
 
     const scheduledTimes = parseScheduledTimes(medicationForm.scheduledTimes);
+    const strength = `${medicationForm.strengthPerForm}${medicationForm.doseUnit} ${medicationForm.medForm}`;
 
     try {
       const res = await fetch(`${API}/api/v1/medications`, {
@@ -308,10 +536,17 @@ export default function DashboardPage() {
         body: JSON.stringify({
           medication: {
             name: medicationForm.name,
-            strength: medicationForm.strength,
+            strength,
+            med_form: medicationForm.medForm,
+            pill_size_mg: medicationForm.strengthPerForm,
+            dosage: medicationForm.dosage,
+            dose_unit: medicationForm.doseUnit,
+            date_started: medicationForm.dateStarted || null,
+            rx_date: medicationForm.rxDate || null,
+            rx_qty: medicationForm.rxQty || null,
+            rx_per_day: medicationForm.rxPerDay || null,
             is_prn: medicationForm.isPrn,
             scheduled_times: medicationForm.isPrn ? [] : scheduledTimes,
-            pill_size_mg: medicationForm.pillSizeMg || null,
             is_active: true,
           },
         }),
@@ -331,56 +566,6 @@ export default function DashboardPage() {
     }
   }
 
-  async function recordDose(medication: Medication, overrides: Partial<DoseForm> = {}) {
-    setError(null);
-    setSavingDoseId(medication.id);
-
-    const token = localStorage.getItem("device_token");
-    if (!token) {
-      router.replace("/");
-      return;
-    }
-
-    const defaultForm: DoseForm = {
-      doseMg: medicationDefaultDose(medication),
-      doseType: medication.is_prn ? "prn" : "scheduled",
-    };
-    const form = { ...defaultForm, ...doseForms[medication.id], ...overrides };
-
-    try {
-      const res = await fetch(`${API}/api/v1/health_events`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          health_event: {
-            metric_type: "medication_dose",
-            recorded_at: new Date().toISOString(),
-            client_uuid: crypto.randomUUID(),
-            medication_dose_payload: {
-              medication_id: medication.id,
-              dose_mg: form.doseMg,
-              dose_type: form.doseType,
-            },
-          },
-        }),
-      });
-
-      if (!res.ok) {
-        setError(await parseApiError(res));
-        return;
-      }
-
-      await fetchData();
-    } catch {
-      setError("Could not reach the server");
-    } finally {
-      setSavingDoseId(null);
-    }
-  }
-
   return (
     <div className="min-h-screen bg-ctp-crust flex flex-col">
       <header className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-ctp-surface0">
@@ -396,8 +581,15 @@ export default function DashboardPage() {
 
       <main className="flex-1 px-4 sm:px-6 py-5">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
-          <div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-base font-medium text-ctp-subtext1">Medication Adherence</h2>
+            <button
+              type="button"
+              onClick={() => openEntryModal()}
+              className="rounded-lg bg-[#89b4fa] px-4 py-2 text-sm font-medium text-[#1e1e2e] transition hover:bg-[#74c7ec]"
+            >
+              Add data
+            </button>
           </div>
 
           {loading && <p className="text-sm text-ctp-overlay0">Loading...</p>}
@@ -411,19 +603,25 @@ export default function DashboardPage() {
                     <h3 className="text-base font-medium text-ctp-text">Basic Med Info</h3>
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[620px] text-sm">
+                    <table className="w-full min-w-[1120px] text-sm">
                       <thead className="bg-ctp-surface0 text-ctp-subtext1">
                         <tr>
-                          <th className="px-4 py-2.5 text-left font-medium">Medication</th>
-                          <th className="px-4 py-2.5 text-left font-medium">Taken</th>
+                          <th className="px-4 py-2.5 text-left font-medium">Med</th>
+                          <th className="px-4 py-2.5 text-left font-medium">Started</th>
+                          <th className="px-4 py-2.5 text-left font-medium">Rx Date</th>
+                          <th className="px-4 py-2.5 text-left font-medium">Rx Qty</th>
+                          <th className="px-4 py-2.5 text-left font-medium">Rx/Day</th>
+                          <th className="px-4 py-2.5 text-left font-medium">Taken Qty</th>
                           <th className="px-4 py-2.5 text-left font-medium">Last Qty</th>
-                          <th className="px-4 py-2.5 text-left font-medium">Last At</th>
+                          <th className="px-4 py-2.5 text-left font-medium">Dosage</th>
+                          <th className="px-4 py-2.5 text-left font-medium">Unit</th>
+                          <th className="px-4 py-2.5 text-left font-medium">Form</th>
                         </tr>
                       </thead>
                       <tbody>
                         {basicRows.length === 0 && (
                           <tr>
-                            <td colSpan={4} className="px-4 py-4 text-center text-ctp-overlay0">
+                            <td colSpan={10} className="px-4 py-4 text-center text-ctp-overlay0">
                               Add your first medication to start logging doses.
                             </td>
                           </tr>
@@ -432,11 +630,19 @@ export default function DashboardPage() {
                           <tr key={row.medication.id} className={index % 2 === 0 ? "bg-ctp-base" : "bg-ctp-mantle"}>
                             <td className="px-4 py-3 text-ctp-text">
                               {row.medication.name}
-                              <span className="ml-2 text-ctp-overlay0">{row.medication.strength}</span>
+                              <span className="ml-2 text-ctp-overlay0">{medicationStrengthLabel(row.medication)}</span>
                             </td>
-                            <td className="px-4 py-3 text-ctp-subtext0">{row.taken}</td>
+                            <td className="px-4 py-3 text-ctp-subtext0">{formatDateOnly(row.medication.date_started)}</td>
+                            <td className="px-4 py-3 text-ctp-subtext0">{formatDateOnly(row.medication.rx_date)}</td>
+                            <td className="px-4 py-3 text-ctp-subtext0">{formatNumber(row.medication.rx_qty)}</td>
+                            <td className="px-4 py-3 text-ctp-subtext0">{formatNumber(row.medication.rx_per_day)}</td>
+                            <td className="px-4 py-3 text-ctp-subtext0">{formatQuantity(row.takenQty, row.medication)}</td>
                             <td className="px-4 py-3 text-ctp-subtext0">{row.lastQty}</td>
-                            <td className="px-4 py-3 text-ctp-subtext0">{row.lastAt}</td>
+                            <td className="px-4 py-3 text-ctp-subtext0">
+                              {row.medication.dosage ? formatDose(row.medication.dosage, row.medication.dose_unit) : "-"}
+                            </td>
+                            <td className="px-4 py-3 text-ctp-subtext0">{row.medication.dose_unit}</td>
+                            <td className="px-4 py-3 text-ctp-subtext0">{row.medication.med_form ?? "-"}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -505,13 +711,16 @@ export default function DashboardPage() {
                         {events.slice(0, 20).map((event, index) => {
                           const payload = event.payload;
                           if (!payload) return null;
+                          const medication = medicationById[payload.medication_id];
 
                           return (
                             <tr key={event.id} className={index % 2 === 0 ? "bg-ctp-base" : "bg-ctp-mantle"}>
                               <td className="px-4 py-3 text-ctp-subtext0">{formatDateOnly(event.recorded_at)}</td>
                               <td className="px-4 py-3 text-ctp-subtext0">{formatTimeOnly(event.recorded_at)}</td>
                               <td className="px-4 py-3 text-ctp-text">{medicationNames[payload.medication_id] ?? "Medication"}</td>
-                              <td className="px-4 py-3 text-ctp-subtext0">{formatDose(payload.dose_mg)}</td>
+                              <td className="px-4 py-3 text-ctp-subtext0">
+                                {medication ? formatQuantity(doseQuantity(payload.dose_mg, medication), medication) : "-"}
+                              </td>
                               <td className="px-4 py-3 text-ctp-subtext0">{payload.dose_type}</td>
                             </tr>
                           );
@@ -535,26 +744,86 @@ export default function DashboardPage() {
                       value={medicationForm.name}
                       onChange={(e) => setMedicationForm((form) => ({ ...form, name: e.target.value }))}
                       className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
-                      placeholder="Medication name"
+                      placeholder="Medication name, e.g. lisinopril"
                     />
+                    <div className="grid grid-cols-[1fr_84px] gap-2">
+                      <input
+                        aria-label="Strength per form"
+                        required
+                        type="number"
+                        min="0"
+                        step="0.001"
+                        value={medicationForm.strengthPerForm}
+                        onChange={(e) => setMedicationForm((form) => ({ ...form, strengthPerForm: e.target.value }))}
+                        className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
+                        placeholder="Strength per form, e.g. 10"
+                      />
+                      <input
+                        aria-label="Dose unit"
+                        required
+                        value={medicationForm.doseUnit}
+                        onChange={(e) => setMedicationForm((form) => ({ ...form, doseUnit: e.target.value }))}
+                        className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
+                        placeholder="mg"
+                      />
+                    </div>
                     <input
-                      aria-label="Medication strength"
+                      aria-label="Medication form"
                       required
-                      value={medicationForm.strength}
-                      onChange={(e) => setMedicationForm((form) => ({ ...form, strength: e.target.value }))}
+                      value={medicationForm.medForm}
+                      onChange={(e) => setMedicationForm((form) => ({ ...form, medForm: e.target.value }))}
                       className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
-                      placeholder="Strength, e.g. 10mg"
+                      placeholder="Form, e.g. tab"
                     />
                     <input
-                      aria-label="Pill size in milligrams"
+                      aria-label="Dosage"
+                      required
                       type="number"
                       min="0"
                       step="0.001"
-                      value={medicationForm.pillSizeMg}
-                      onChange={(e) => setMedicationForm((form) => ({ ...form, pillSizeMg: e.target.value }))}
+                      value={medicationForm.dosage}
+                      onChange={(e) => setMedicationForm((form) => ({ ...form, dosage: e.target.value }))}
                       className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
-                      placeholder="Dose per pill in mg"
+                      placeholder="Dosage, e.g. 15"
                     />
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        aria-label="Date started"
+                        type="date"
+                        value={medicationForm.dateStarted}
+                        onChange={(e) => setMedicationForm((form) => ({ ...form, dateStarted: e.target.value }))}
+                        className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
+                      />
+                      <input
+                        aria-label="Prescription date"
+                        type="date"
+                        value={medicationForm.rxDate}
+                        onChange={(e) => setMedicationForm((form) => ({ ...form, rxDate: e.target.value }))}
+                        className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        aria-label="Prescription quantity"
+                        type="number"
+                        min="0"
+                        step="0.001"
+                        value={medicationForm.rxQty}
+                        onChange={(e) => setMedicationForm((form) => ({ ...form, rxQty: e.target.value }))}
+                        className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
+                        placeholder="Rx qty"
+                      />
+                      <input
+                        aria-label="Prescription quantity per day"
+                        type="number"
+                        min="0"
+                        step="0.001"
+                        value={medicationForm.rxPerDay}
+                        onChange={(e) => setMedicationForm((form) => ({ ...form, rxPerDay: e.target.value }))}
+                        className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
+                        placeholder="Rx per day"
+                      />
+                    </div>
                     <label className="flex items-center gap-2 text-sm text-ctp-subtext1">
                       <input
                         type="checkbox"
@@ -585,83 +854,23 @@ export default function DashboardPage() {
                 </form>
 
                 <section className="rounded-xl border border-ctp-surface0 bg-ctp-base p-4">
-                  <h3 className="mb-3 text-base font-medium text-ctp-text">Quick log</h3>
-                  <div className="flex flex-col gap-3">
-                    {activeMedications.length === 0 && (
-                      <p className="text-sm text-ctp-overlay0">Add a medication first.</p>
-                    )}
-                    {activeMedications.map((medication) => {
-                      const dose = lastDoses[medication.id];
-                      const doseForm = doseForms[medication.id] ?? {
-                        doseMg: medicationDefaultDose(medication),
-                        doseType: medication.is_prn ? "prn" : "scheduled",
-                      };
-
-                      return (
-                        <div key={medication.id} className="border-b border-ctp-surface0 pb-3 last:border-0 last:pb-0">
-                          <div className="mb-2">
-                            <p className="text-sm text-ctp-text">{medication.name}</p>
-                            <p className="text-xs text-ctp-overlay0">
-                              {dose?.payload ? `${formatDose(dose.payload.dose_mg)} ${timeAgo(dose.recorded_at)}` : "never logged"}
-                            </p>
-                          </div>
-                          <div className="grid grid-cols-[1fr_1fr] gap-2">
-                            <input
-                              aria-label={`${medication.name} dose in milligrams`}
-                              type="number"
-                              min="0"
-                              step="0.001"
-                              value={doseForm.doseMg}
-                              onChange={(e) =>
-                                setDoseForms((forms) => ({
-                                  ...forms,
-                                  [medication.id]: { ...doseForm, doseMg: e.target.value },
-                                }))
-                              }
-                              className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
-                              placeholder="mg"
-                            />
-                            <select
-                              aria-label={`${medication.name} dose type`}
-                              value={doseForm.doseType}
-                              onChange={(e) =>
-                                setDoseForms((forms) => ({
-                                  ...forms,
-                                  [medication.id]: { ...doseForm, doseType: e.target.value as DoseType },
-                                }))
-                              }
-                              className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
-                            >
-                              <option value={medication.is_prn ? "prn" : "scheduled"}>
-                                {medication.is_prn ? "PRN" : "Scheduled"}
-                              </option>
-                              {!medication.is_prn && <option value="missed">Missed</option>}
-                              <option value="reconciliation">Reconciliation</option>
-                            </select>
-                          </div>
-                          <div className="mt-2 flex gap-2">
-                            <button
-                              type="button"
-                              onClick={() => recordDose(medication)}
-                              disabled={savingDoseId === medication.id}
-                              className="flex-1 rounded-lg bg-[#89b4fa] px-3 py-2 text-sm font-medium text-[#1e1e2e] transition hover:bg-[#74c7ec] disabled:opacity-50"
-                            >
-                              {savingDoseId === medication.id ? "Saving..." : "Log dose"}
-                            </button>
-                            {!medication.is_prn && (
-                              <button
-                                type="button"
-                                onClick={() => recordDose(medication, { doseType: "missed" })}
-                                disabled={savingDoseId === medication.id}
-                                className="rounded-lg border border-ctp-surface1 px-3 py-2 text-sm text-ctp-subtext1 transition hover:text-ctp-red disabled:opacity-50"
-                              >
-                                Missed
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
+                  <h3 className="mb-3 text-base font-medium text-ctp-text">Entry shortcuts</h3>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => openEntryModal("medication_dose")} className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text hover:bg-ctp-surface2">
+                      Meds
+                    </button>
+                    <button type="button" onClick={() => openEntryModal("blood_pressure")} className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text hover:bg-ctp-surface2">
+                      BP / HR
+                    </button>
+                    <button type="button" onClick={() => openEntryModal("weight")} className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text hover:bg-ctp-surface2">
+                      Weight
+                    </button>
+                    <button type="button" onClick={() => openEntryModal("sleep")} className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text hover:bg-ctp-surface2">
+                      Sleep
+                    </button>
+                    <button type="button" onClick={() => openEntryModal("steps")} className="col-span-2 rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text hover:bg-ctp-surface2">
+                      Steps
+                    </button>
                   </div>
                 </section>
               </aside>
@@ -669,6 +878,215 @@ export default function DashboardPage() {
           )}
         </div>
       </main>
+
+      {entryOpen && (
+        <div className="fixed inset-0 z-50 flex items-end bg-black/70 p-0 sm:items-center sm:justify-center sm:p-6">
+          <form
+            onSubmit={saveEntry}
+            className="max-h-[92vh] w-full overflow-y-auto rounded-t-xl border border-ctp-surface0 bg-ctp-base p-4 shadow-xl sm:max-w-lg sm:rounded-xl sm:p-5"
+          >
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <h3 className="text-lg font-medium text-ctp-text">Add data</h3>
+              <button
+                type="button"
+                onClick={() => setEntryOpen(false)}
+                className="rounded-lg border border-ctp-surface1 px-3 py-1.5 text-sm text-ctp-subtext1 hover:text-ctp-text"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <select
+                aria-label="Data type"
+                value={entryKind}
+                onChange={(e) => changeEntryKind(e.target.value as EntryKind)}
+                className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
+              >
+                <option value="medication_dose">Medication dose</option>
+                <option value="blood_pressure">Blood pressure / heart rate</option>
+                <option value="weight">Weight</option>
+                <option value="sleep">Sleep</option>
+                <option value="steps">Steps</option>
+              </select>
+
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  aria-label="Entry date"
+                  type="date"
+                  required
+                  value={entryForm.date}
+                  onChange={(e) => setEntryForm((form) => ({ ...form, date: e.target.value }))}
+                  className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
+                />
+                {entryKind !== "sleep" && (
+                  <input
+                    aria-label="Entry time"
+                    type="time"
+                    required
+                    value={entryForm.time}
+                    onChange={(e) => setEntryForm((form) => ({ ...form, time: e.target.value }))}
+                    className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
+                  />
+                )}
+              </div>
+
+              {entryKind === "medication_dose" && (
+                <>
+                  <select
+                    aria-label="Medication"
+                    required
+                    value={entryForm.medicationId}
+                    onChange={(e) => {
+                      const medication = medicationById[Number(e.target.value)];
+                      setEntryForm((form) => ({
+                        ...form,
+                        medicationId: e.target.value,
+                        doseMg: medication ? medicationDefaultDose(medication) : form.doseMg,
+                        doseType: medication?.is_prn ? "prn" : "scheduled",
+                      }));
+                    }}
+                    className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
+                  >
+                    <option value="" disabled>
+                      Select medication
+                    </option>
+                    {activeMedications.map((medication) => (
+                      <option key={medication.id} value={medication.id}>
+                        {medication.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      aria-label="Dose amount"
+                      type="number"
+                      min="0"
+                      step="0.001"
+                      required
+                      value={entryForm.doseMg}
+                      onChange={(e) => setEntryForm((form) => ({ ...form, doseMg: e.target.value }))}
+                      className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
+                      placeholder={`Dose ${selectedEntryMedication()?.dose_unit ?? "mg"}`}
+                    />
+                    <select
+                      aria-label="Dose type"
+                      value={entryForm.doseType}
+                      onChange={(e) => setEntryForm((form) => ({ ...form, doseType: e.target.value as DoseType }))}
+                      className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
+                    >
+                      <option value={selectedEntryMedication()?.is_prn ? "prn" : "scheduled"}>
+                        {selectedEntryMedication()?.is_prn ? "PRN" : "Scheduled"}
+                      </option>
+                      {!selectedEntryMedication()?.is_prn && <option value="missed">Missed</option>}
+                      <option value="reconciliation">Reconciliation</option>
+                    </select>
+                  </div>
+                </>
+              )}
+
+              {entryKind === "blood_pressure" && (
+                <>
+                  <select
+                    aria-label="Reading context"
+                    value={entryForm.readingContext}
+                    onChange={(e) => setEntryForm((form) => ({ ...form, readingContext: e.target.value as "wake" | "sleep" }))}
+                    className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
+                  >
+                    <option value="wake">Wake</option>
+                    <option value="sleep">Sleep</option>
+                  </select>
+                  <div className="grid grid-cols-3 gap-2">
+                    <input
+                      aria-label="Systolic"
+                      type="number"
+                      required
+                      value={entryForm.systolic}
+                      onChange={(e) => setEntryForm((form) => ({ ...form, systolic: e.target.value }))}
+                      className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
+                      placeholder="Sys"
+                    />
+                    <input
+                      aria-label="Diastolic"
+                      type="number"
+                      required
+                      value={entryForm.diastolic}
+                      onChange={(e) => setEntryForm((form) => ({ ...form, diastolic: e.target.value }))}
+                      className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
+                      placeholder="Dia"
+                    />
+                    <input
+                      aria-label="Heart rate"
+                      type="number"
+                      value={entryForm.pulse}
+                      onChange={(e) => setEntryForm((form) => ({ ...form, pulse: e.target.value }))}
+                      className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
+                      placeholder="HR"
+                    />
+                  </div>
+                </>
+              )}
+
+              {entryKind === "weight" && (
+                <input
+                  aria-label="Weight in pounds"
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  required
+                  value={entryForm.weight}
+                  onChange={(e) => setEntryForm((form) => ({ ...form, weight: e.target.value }))}
+                  className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
+                  placeholder="Weight in lb"
+                />
+              )}
+
+              {entryKind === "sleep" && (
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    aria-label="Bedtime"
+                    type="time"
+                    required
+                    value={entryForm.bedtime}
+                    onChange={(e) => setEntryForm((form) => ({ ...form, bedtime: e.target.value }))}
+                    className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
+                  />
+                  <input
+                    aria-label="Wake time"
+                    type="time"
+                    required
+                    value={entryForm.wakeTime}
+                    onChange={(e) => setEntryForm((form) => ({ ...form, wakeTime: e.target.value }))}
+                    className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
+                  />
+                </div>
+              )}
+
+              {entryKind === "steps" && (
+                <input
+                  aria-label="Steps"
+                  type="number"
+                  min="0"
+                  step="1"
+                  required
+                  value={entryForm.steps}
+                  onChange={(e) => setEntryForm((form) => ({ ...form, steps: e.target.value }))}
+                  className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
+                  placeholder="Steps"
+                />
+              )}
+
+              <button
+                type="submit"
+                disabled={savingEntry}
+                className="mt-1 rounded-lg bg-[#89b4fa] px-4 py-2 text-sm font-medium text-[#1e1e2e] transition hover:bg-[#74c7ec] disabled:opacity-50"
+              >
+                {savingEntry ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       <footer className="px-4 sm:px-6 py-4 flex justify-end border-t border-ctp-surface0">
         <button

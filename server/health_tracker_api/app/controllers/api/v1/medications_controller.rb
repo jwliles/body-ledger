@@ -4,7 +4,7 @@ module Api
       # GET /api/v1/medications
       def index
         render json: current_user.medications.as_json(
-          only: [ :id, :name, :strength, :is_prn, :scheduled_times, :pill_size_mg, :is_active, :created_at ]
+          only: medication_json_fields
         )
       end
 
@@ -14,7 +14,7 @@ module Api
 
         if medication.save
           render json: medication.as_json(
-            only: [ :id, :name, :strength, :is_prn, :scheduled_times, :pill_size_mg, :is_active, :created_at ]
+            only: medication_json_fields
           ), status: :created
         else
           render json: { errors: medication.errors.full_messages }, status: :unprocessable_entity
@@ -23,8 +23,20 @@ module Api
 
       private
 
+      def medication_json_fields
+        [
+          :id, :name, :strength, :is_prn, :scheduled_times, :pill_size_mg,
+          :date_started, :rx_date, :rx_qty, :rx_per_day, :dosage, :dose_unit,
+          :med_form, :is_active, :created_at
+        ]
+      end
+
       def medication_params
-        params.require(:medication).permit(:name, :strength, :is_prn, :pill_size_mg, :is_active, scheduled_times: [])
+        params.require(:medication).permit(
+          :name, :strength, :is_prn, :pill_size_mg, :date_started, :rx_date,
+          :rx_qty, :rx_per_day, :dosage, :dose_unit, :med_form, :is_active,
+          scheduled_times: []
+        )
       end
     end
   end
