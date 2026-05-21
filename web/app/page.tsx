@@ -7,9 +7,16 @@ const API = process.env.NEXT_PUBLIC_API_URL;
 
 type Tab = "signin" | "signup";
 
+type TotpSetup = {
+  qrCodeSvg: string;
+  provisioningUri: string;
+};
+
 export default function LoginPage() {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("signin");
+  const [totpSetup, setTotpSetup] = useState<TotpSetup | null>(null);
+  const [totpVerifyCode, setTotpVerifyCode] = useState("");
 
   // Sign-in fields
   const [siUsername, setSiUsername] = useState("");
@@ -97,12 +104,133 @@ export default function LoginPage() {
       localStorage.setItem("device_token", devData.token);
       localStorage.setItem("device_id", String(devData.id));
       localStorage.setItem("username", suUsername);
+
+      const totpRes = await fetch(`${API}/api/v1/auth/totp_setup`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${devData.token}` },
+      });
+      const totpData = await totpRes.json();
+      if (!totpRes.ok) {
+        setError(totpData.error ?? "Could not start authenticator setup");
+        return;
+      }
+
+      setTotpSetup({
+        qrCodeSvg: totpData.qr_code_svg,
+        provisioningUri: totpData.otp_provisioning_uri,
+      });
+    } catch {
+      setError("Could not reach the server");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleTotpVerify(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+
+    const token = localStorage.getItem("device_token");
+    if (!token) {
+      setError("Your session expired. Sign in again to finish setup.");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API}/api/v1/auth/totp_verify`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ otp_attempt: totpVerifyCode }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Invalid authenticator code");
+        return;
+      }
       router.push("/dashboard");
     } catch {
       setError("Could not reach the server");
     } finally {
       setLoading(false);
     }
+  }
+
+  function resetAuthForm(nextTab: Tab) {
+    setTab(nextTab);
+    setError(null);
+    setTotpSetup(null);
+    setTotpVerifyCode("");
+  }
+
+  if (totpSetup) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center px-4 bg-ctp-crust min-h-screen">
+        <div className="w-full max-w-sm">
+          <div className="mb-8 text-center">
+            <h1 className="text-3xl font-semibold tracking-tight text-ctp-text">
+              body ledger
+            </h1>
+          </div>
+
+          <form
+            onSubmit={handleTotpVerify}
+            className="rounded-2xl bg-ctp-base p-8 flex flex-col gap-5 border border-ctp-surface0"
+          >
+            <div>
+              <h2 className="text-lg font-medium text-ctp-text">Set up authenticator</h2>
+              <p className="mt-1 text-sm text-ctp-subtext1">
+                Scan this QR code, then enter the 6-digit code from your authenticator app.
+              </p>
+            </div>
+
+            <div
+              className="rounded-lg bg-white p-4 text-black"
+              dangerouslySetInnerHTML={{ __html: totpSetup.qrCodeSvg }}
+            />
+
+            <details className="text-sm text-ctp-subtext1">
+              <summary className="cursor-pointer text-ctp-text">Manual setup key</summary>
+              <p className="mt-2 break-all font-mono text-xs text-ctp-subtext0">
+                {totpSetup.provisioningUri}
+              </p>
+            </details>
+
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="totp-verify" className="text-sm text-ctp-subtext1">
+                Authenticator code
+              </label>
+              <input
+                id="totp-verify"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                required
+                maxLength={6}
+                value={totpVerifyCode}
+                onChange={(e) => setTotpVerifyCode(e.target.value.replace(/\D/g, ""))}
+                className="rounded-lg bg-ctp-surface1 px-3 py-2 text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue transition tracking-widest"
+                placeholder="000000"
+              />
+            </div>
+
+            {error && <p className="text-sm text-ctp-red">{error}</p>}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="mt-1 rounded-lg bg-[#89b4fa] px-4 py-2 text-sm font-medium text-[#1e1e2e] hover:bg-[#74c7ec] disabled:opacity-50 transition cursor-pointer"
+            >
+              {loading ? "Verifying..." : "Finish setup"}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -119,7 +247,7 @@ export default function LoginPage() {
         <div className="flex rounded-xl bg-ctp-surface0 p-1 mb-6">
           <button
             type="button"
-            onClick={() => { setTab("signin"); setError(null); }}
+            onClick={() => resetAuthForm("signin")}
             className={`flex-1 rounded-lg py-2 text-sm font-medium transition cursor-pointer ${
               tab === "signin"
                 ? "bg-ctp-base text-ctp-text shadow-sm"
@@ -130,7 +258,7 @@ export default function LoginPage() {
           </button>
           <button
             type="button"
-            onClick={() => { setTab("signup"); setError(null); }}
+            onClick={() => resetAuthForm("signup")}
             className={`flex-1 rounded-lg py-2 text-sm font-medium transition cursor-pointer ${
               tab === "signup"
                 ? "bg-ctp-base text-ctp-text shadow-sm"
@@ -188,7 +316,6 @@ export default function LoginPage() {
                 type="text"
                 inputMode="numeric"
                 autoComplete="one-time-code"
-                required
                 maxLength={6}
                 value={siTotp}
                 onChange={(e) => setSiTotp(e.target.value.replace(/\D/g, ""))}

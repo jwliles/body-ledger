@@ -15,6 +15,17 @@ npm run dev    # → http://localhost:3001 (if Rails is already on 3000)
 
 The `NEXT_PUBLIC_API_URL` env var must point to the running Rails API. In production it is `https://api.bodyledger.org`.
 
+## PWA
+
+The web client includes a manifest, install icons, and a production-only service worker so it can be installed from Chromium-based browsers on Android and Linux desktop. Use a production build to test install behavior:
+
+```sh
+npm run build
+npm run start
+```
+
+Chrome requires the app to be served from HTTPS for install prompts, except on `localhost`.
+
 ## What's Built
 
 - **Auth page** (`/`) — login and signup tabs, TOTP input field

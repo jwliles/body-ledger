@@ -4,8 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [unreleased]
 
+### ⛰️  Features
+
+- *(uncategorized)* Add web UI login/signup tabs, dashboard with medication adherence
+
 ### ⚙️ Miscellaneous Tasks
 
+- *(files)* Update files
+- *(uncategorized)* Test post-commit changelog hook
 - *(uncategorized)* Add git-cliff changelog config
 
 ### 📦 Other

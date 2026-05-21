@@ -38,6 +38,10 @@ module Api
 
       # POST /api/v1/auth/totp_setup
       def totp_setup
+        if current_user.otp_required_for_login
+          return render json: { error: "TOTP is already enabled" }, status: :conflict
+        end
+
         current_user.generate_otp_secret!
         uri = current_user.otp_provisioning_uri
         qr  = RQRCode::QRCode.new(uri).as_svg(module_size: 4)

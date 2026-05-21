@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Body Ledger app icon</title>
+  <desc id="desc">A ledger mark with a health pulse line.</desc>
+  <rect width="512" height="512" rx="96" fill="#11111b"/>
+  <rect x="120" y="88" width="272" height="336" rx="42" fill="#1e1e2e" stroke="#45475a" stroke-width="18"/>
+  <path d="M168 164h176M168 348h176" stroke="#6c7086" stroke-width="22" stroke-linecap="round"/>
+  <path d="M150 266h52l28-68 52 132 36-64h44" fill="none" stroke="#89b4fa" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
