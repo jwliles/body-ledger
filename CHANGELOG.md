@@ -16,6 +16,19 @@ All notable changes to this project will be documented in this file.
 
 ### 📦 Other
 
+- *(uncategorized)* Changes:
+
+  - Removed "orientation": "portrait-primary" from web/public/manifest.webmanifest:1, so the installed PWA can rotate with the phone.
+  - Made the dashboard mobile-friendly:
+      - Header stacks cleanly on narrow screens.
+      - Stat tables render as mobile card lists on phone widths.
+      - Full horizontal tables remain for tablet/desktop.
+  - Kept the metric-aware Add data modal:
+      - Meds: medication, dose, type
+      - BP/HR: wake/sleep, sys, dia, HR
+      - Weight: lb
+      - Sleep: bedtime/wake time
+      - Steps: step count
 - *(uncategorized)* The dashboard now keeps the stat tables as the main view and uses a smart Add data modal. The modal has a metric selector and surfaces only the fields for that metric:
 
   - Medication dose: medication, dose, dose type

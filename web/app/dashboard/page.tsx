@@ -580,7 +580,7 @@ export default function DashboardPage() {
       </header>
 
       <main className="flex-1 px-3 py-4 sm:px-6 sm:py-5">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-base font-medium text-ctp-subtext1">Medication Adherence</h2>
             <button
@@ -596,7 +596,7 @@ export default function DashboardPage() {
           {error && <p className="text-sm text-ctp-red">{error}</p>}
 
           {!loading && (
-            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
               <section className="flex min-w-0 flex-col gap-5">
                 <section className="rounded-xl border border-ctp-surface0 bg-ctp-base">
                   <div className="border-b border-ctp-surface0 px-4 py-3">
@@ -637,8 +637,13 @@ export default function DashboardPage() {
                       </div>
                     ))}
                   </div>
-                  <div className="hidden overflow-x-auto md:block">
-                    <table className="w-full min-w-[1120px] text-sm">
+                  {basicRows.length === 0 ? (
+                    <p className="hidden px-4 py-6 text-center text-sm text-ctp-overlay0 md:block">
+                      Add your first medication to start logging doses.
+                    </p>
+                  ) : (
+                    <div className="hidden overflow-x-auto md:block">
+                    <table className="w-full min-w-[980px] text-sm">
                       <thead className="bg-ctp-surface0 text-ctp-subtext1">
                         <tr>
                           <th className="px-4 py-2.5 text-left font-medium">Med</th>
@@ -654,13 +659,6 @@ export default function DashboardPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {basicRows.length === 0 && (
-                          <tr>
-                            <td colSpan={10} className="px-4 py-4 text-center text-ctp-overlay0">
-                              Add your first medication to start logging doses.
-                            </td>
-                          </tr>
-                        )}
                         {basicRows.map((row, index) => (
                           <tr key={row.medication.id} className={index % 2 === 0 ? "bg-ctp-base" : "bg-ctp-mantle"}>
                             <td className="px-4 py-3 text-ctp-text">
@@ -683,6 +681,7 @@ export default function DashboardPage() {
                       </tbody>
                     </table>
                   </div>
+                  )}
                 </section>
 
                 <section className="rounded-xl border border-ctp-surface0 bg-ctp-base">
@@ -707,7 +706,12 @@ export default function DashboardPage() {
                       </div>
                     ))}
                   </div>
-                  <div className="hidden overflow-x-auto md:block">
+                  {adherenceRows.length === 0 ? (
+                    <p className="hidden px-4 py-6 text-center text-sm text-ctp-overlay0 md:block">
+                      No adherence data yet.
+                    </p>
+                  ) : (
+                    <div className="hidden overflow-x-auto md:block">
                     <table className="w-full min-w-[620px] text-sm">
                       <thead className="bg-ctp-surface0 text-ctp-subtext1">
                         <tr>
@@ -718,13 +722,6 @@ export default function DashboardPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {adherenceRows.length === 0 && (
-                          <tr>
-                            <td colSpan={4} className="px-4 py-4 text-center text-ctp-overlay0">
-                              No adherence data yet.
-                            </td>
-                          </tr>
-                        )}
                         {adherenceRows.map((row, index) => (
                           <tr key={row.medication.id} className={index % 2 === 0 ? "bg-ctp-base" : "bg-ctp-mantle"}>
                             <td className="px-4 py-3 text-ctp-text">{row.medication.name}</td>
@@ -736,6 +733,7 @@ export default function DashboardPage() {
                       </tbody>
                     </table>
                   </div>
+                  )}
                 </section>
 
                 <section className="rounded-xl border border-ctp-surface0 bg-ctp-base">
@@ -766,7 +764,12 @@ export default function DashboardPage() {
                       );
                     })}
                   </div>
-                  <div className="hidden overflow-x-auto md:block">
+                  {events.slice(0, 20).length === 0 ? (
+                    <p className="hidden px-4 py-6 text-center text-sm text-ctp-overlay0 md:block">
+                      No doses recorded yet.
+                    </p>
+                  ) : (
+                    <div className="hidden overflow-x-auto md:block">
                     <table className="w-full min-w-[700px] text-sm">
                       <thead className="bg-ctp-surface0 text-ctp-subtext1">
                         <tr>
@@ -778,13 +781,6 @@ export default function DashboardPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {events.slice(0, 20).length === 0 && (
-                          <tr>
-                            <td colSpan={5} className="px-4 py-4 text-center text-ctp-overlay0">
-                              No doses recorded yet.
-                            </td>
-                          </tr>
-                        )}
                         {events.slice(0, 20).map((event, index) => {
                           const payload = event.payload;
                           if (!payload) return null;
@@ -805,6 +801,7 @@ export default function DashboardPage() {
                       </tbody>
                     </table>
                   </div>
+                  )}
                 </section>
               </section>
 
