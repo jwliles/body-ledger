@@ -16,6 +16,13 @@ All notable changes to this project will be documented in this file.
 
 ### 📦 Other
 
+- *(uncategorized)* The dashboard now keeps the stat tables as the main view and uses a smart Add data modal. The modal has a metric selector and surfaces only the fields for that metric:
+
+  - Medication dose: medication, dose, dose type
+  - Blood pressure / HR: wake/sleep, systolic, diastolic, heart rate
+  - Weight: weight in lb, stored canonically as kg with original lb preserved
+  - Sleep: bedtime and wake time
+  - Steps: step count, stored as an activity event
 - *(uncategorized)* Reshaped the dashboard
 - *(uncategorized)* Add medication and dose logging workflow
 - *(uncategorized)* Prepare static assets for standalone deploy

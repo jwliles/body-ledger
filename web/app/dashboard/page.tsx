@@ -568,18 +568,18 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-ctp-crust flex flex-col">
-      <header className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-ctp-surface0">
+      <header className="flex flex-col gap-3 px-4 py-4 border-b border-ctp-surface0 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div>
           <h1 className="text-xl font-semibold text-ctp-text">body ledger</h1>
           <p className="text-sm text-ctp-subtext0">Hello, {username}</p>
         </div>
-        <div className="text-right">
+        <div className="text-left sm:text-right">
           <p className="text-sm text-ctp-subtext1">{formatDate(now)}</p>
           <p className="text-lg font-mono text-ctp-text">{formatTime(now)}</p>
         </div>
       </header>
 
-      <main className="flex-1 px-4 sm:px-6 py-5">
+      <main className="flex-1 px-3 py-4 sm:px-6 sm:py-5">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-base font-medium text-ctp-subtext1">Medication Adherence</h2>
@@ -602,7 +602,42 @@ export default function DashboardPage() {
                   <div className="border-b border-ctp-surface0 px-4 py-3">
                     <h3 className="text-base font-medium text-ctp-text">Basic Med Info</h3>
                   </div>
-                  <div className="overflow-x-auto">
+                  <div className="divide-y divide-ctp-surface0 md:hidden">
+                    {basicRows.length === 0 && (
+                      <p className="px-4 py-4 text-center text-sm text-ctp-overlay0">
+                        Add your first medication to start logging doses.
+                      </p>
+                    )}
+                    {basicRows.map((row) => (
+                      <div key={row.medication.id} className="p-4">
+                        <div className="mb-3">
+                          <p className="text-base font-medium text-ctp-text">{row.medication.name}</p>
+                          <p className="text-xs text-ctp-overlay0">{medicationStrengthLabel(row.medication)}</p>
+                        </div>
+                        <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                          <dt className="text-ctp-overlay0">Started</dt>
+                          <dd className="text-ctp-subtext0">{formatDateOnly(row.medication.date_started)}</dd>
+                          <dt className="text-ctp-overlay0">Rx Date</dt>
+                          <dd className="text-ctp-subtext0">{formatDateOnly(row.medication.rx_date)}</dd>
+                          <dt className="text-ctp-overlay0">Rx Qty</dt>
+                          <dd className="text-ctp-subtext0">{formatNumber(row.medication.rx_qty)}</dd>
+                          <dt className="text-ctp-overlay0">Rx/Day</dt>
+                          <dd className="text-ctp-subtext0">{formatNumber(row.medication.rx_per_day)}</dd>
+                          <dt className="text-ctp-overlay0">Taken Qty</dt>
+                          <dd className="text-ctp-subtext0">{formatQuantity(row.takenQty, row.medication)}</dd>
+                          <dt className="text-ctp-overlay0">Last Qty</dt>
+                          <dd className="text-ctp-subtext0">{row.lastQty}</dd>
+                          <dt className="text-ctp-overlay0">Dosage</dt>
+                          <dd className="text-ctp-subtext0">
+                            {row.medication.dosage ? formatDose(row.medication.dosage, row.medication.dose_unit) : "-"}
+                          </dd>
+                          <dt className="text-ctp-overlay0">Form</dt>
+                          <dd className="text-ctp-subtext0">{row.medication.med_form ?? "-"}</dd>
+                        </dl>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="hidden overflow-x-auto md:block">
                     <table className="w-full min-w-[1120px] text-sm">
                       <thead className="bg-ctp-surface0 text-ctp-subtext1">
                         <tr>
@@ -654,7 +689,25 @@ export default function DashboardPage() {
                   <div className="border-b border-ctp-surface0 px-4 py-3">
                     <h3 className="text-base font-medium text-ctp-text">Adherence Tracking</h3>
                   </div>
-                  <div className="overflow-x-auto">
+                  <div className="divide-y divide-ctp-surface0 md:hidden">
+                    {adherenceRows.length === 0 && (
+                      <p className="px-4 py-4 text-center text-sm text-ctp-overlay0">No adherence data yet.</p>
+                    )}
+                    {adherenceRows.map((row) => (
+                      <div key={row.medication.id} className="p-4">
+                        <p className="mb-3 text-base font-medium text-ctp-text">{row.medication.name}</p>
+                        <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                          <dt className="text-ctp-overlay0">Adherence 7d</dt>
+                          <dd className="text-ctp-subtext0">{row.adherence7}</dd>
+                          <dt className="text-ctp-overlay0">Adherence 30d</dt>
+                          <dd className="text-ctp-subtext0">{row.adherence30}</dd>
+                          <dt className="text-ctp-overlay0">Last Taken</dt>
+                          <dd className="text-ctp-subtext0">{row.lastTaken}</dd>
+                        </dl>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="hidden overflow-x-auto md:block">
                     <table className="w-full min-w-[620px] text-sm">
                       <thead className="bg-ctp-surface0 text-ctp-subtext1">
                         <tr>
@@ -689,7 +742,31 @@ export default function DashboardPage() {
                   <div className="border-b border-ctp-surface0 px-4 py-3">
                     <h3 className="text-base font-medium text-ctp-text">Recent Dose Logs</h3>
                   </div>
-                  <div className="overflow-x-auto">
+                  <div className="divide-y divide-ctp-surface0 md:hidden">
+                    {events.slice(0, 20).length === 0 && (
+                      <p className="px-4 py-4 text-center text-sm text-ctp-overlay0">No doses recorded yet.</p>
+                    )}
+                    {events.slice(0, 20).map((event) => {
+                      const payload = event.payload;
+                      if (!payload) return null;
+                      const medication = medicationById[payload.medication_id];
+
+                      return (
+                        <div key={event.id} className="p-4">
+                          <p className="text-sm font-medium text-ctp-text">
+                            {medicationNames[payload.medication_id] ?? "Medication"}
+                          </p>
+                          <p className="mt-1 text-xs text-ctp-overlay0">
+                            {formatDateOnly(event.recorded_at)} {formatTimeOnly(event.recorded_at)}
+                          </p>
+                          <p className="mt-2 text-sm text-ctp-subtext0">
+                            {medication ? formatQuantity(doseQuantity(payload.dose_mg, medication), medication) : "-"} · {payload.dose_type}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="hidden overflow-x-auto md:block">
                     <table className="w-full min-w-[700px] text-sm">
                       <thead className="bg-ctp-surface0 text-ctp-subtext1">
                         <tr>

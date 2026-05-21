@@ -9,7 +9,6 @@
   "display_override": ["window-controls-overlay", "standalone", "browser"],
   "background_color": "#11111b",
   "theme_color": "#89b4fa",
-  "orientation": "portrait-primary",
   "categories": ["health", "medical", "productivity"],
   "icons": [
     {
