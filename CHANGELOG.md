@@ -28,6 +28,27 @@ All notable changes to this project will be documented in this file.
 
 ### 📦 Other
 
+- *(uncategorized)* Implemented the first Rails-backed dashboard pass.
+
+  What changed:
+
+  - Added canonical legacy metric mapping in docs/design/legacy_metric_mapping.md and Reports::LegacyMetricMap.
+  - Added sleep_minutes to sleep payloads so tracker sleep is separate from time-in-bed.
+  - Updated sleep projections to derive time_in_bed_minutes, awake_minutes, and sleep_efficiency_percent.
+  - Added report API endpoints:
+      - GET /api/v1/reports
+      - GET /api/v1/reports/:id
+  - Added first-pass Rails report services for:
+      - weekly_summary
+      - daily_metrics_dashboard
+      - sleep_dashboard
+      - meds_dashboard
+      - bp_readings
+      - trends_dashboard
+      - correlations_dashboard
+      - dietitian_report
+  - Added a generic web report viewer at web/app/reports/page.tsx, linked from the dashboard.
+  - Updated the sleep entry UI to accept tracker sleep minutes.
 - *(uncategorized)* Implemented it in web/app/dashboard/page.tsx.
 
   What changed:

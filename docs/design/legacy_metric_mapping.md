@@ -33,7 +33,7 @@ UI labels are presentation.
 | `last_taken_at` | `derived.medication.last_taken_at` | Report projection |
 | `qty` | `report.sleep.linked_medication_quantity` | Sleep report join field |
 | `med` | `report.sleep.linked_medication_name` | Sleep report join field |
-| `med_type` | `report.sleep.linked_medication_type` | Sleep report join field |
+| `med_type` | `medication.med_type` | Sleep report join field |
 
 Reports own cross-day interpretation. Records keep `date_key` attribution so
 Rails can recreate daily-note results while using normalized tables.

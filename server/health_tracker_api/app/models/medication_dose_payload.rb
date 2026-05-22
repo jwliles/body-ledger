@@ -7,9 +7,11 @@ class MedicationDosePayload < ApplicationRecord
   belongs_to :medication
 
   DOSE_TYPES = %w[scheduled prn missed reconciliation].freeze
+  TIMING_CONTEXTS = %w[wake sleep other].freeze
 
   validates :dose_mg,   presence: true, numericality: { greater_than: 0 }
   validates :dose_type, inclusion: { in: DOSE_TYPES }
+  validates :timing_context, inclusion: { in: TIMING_CONTEXTS }, allow_nil: true
 
   # PRN medications can never have a 'missed' dose — they're taken as-needed.
   validate :prn_cannot_be_missed

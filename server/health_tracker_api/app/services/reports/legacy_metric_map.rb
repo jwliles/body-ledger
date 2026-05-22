@@ -124,7 +124,7 @@ module Reports
         ui_label: "Medication"
       },
       "med_type" => {
-        canonical: "report.sleep.linked_medication_type",
+        canonical: "medication.med_type",
         ui_label: "Medication type"
       }
     }.freeze

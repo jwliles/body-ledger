@@ -22,6 +22,7 @@ type Medication = {
   dosage: string | number | null;
   dose_unit: string;
   med_form: string | null;
+  med_type: string | null;
   is_active: boolean;
   created_at: string;
 };
@@ -36,6 +37,7 @@ type HealthEvent = {
 type MedicationForm = {
   name: string;
   medForm: string;
+  medType: string;
   strengthPerForm: string;
   dosage: string;
   doseUnit: string;
@@ -55,6 +57,7 @@ type EntryForm = {
   medicationId: string;
   doseMg: string;
   doseType: DoseType;
+  doseTimingContext: "wake" | "sleep" | "other";
   readingContext: "wake" | "sleep";
   systolic: string;
   diastolic: string;
@@ -73,6 +76,7 @@ function todayInputValue(): string {
 const initialMedicationForm: MedicationForm = {
   name: "",
   medForm: "tab",
+  medType: "",
   strengthPerForm: "",
   dosage: "",
   doseUnit: "mg",
@@ -90,6 +94,7 @@ const initialEntryForm = (): EntryForm => ({
   medicationId: "",
   doseMg: "",
   doseType: "scheduled",
+  doseTimingContext: "other",
   readingContext: "wake",
   systolic: "",
   diastolic: "",
@@ -533,6 +538,7 @@ export default function DashboardPage() {
         medicationId: String(payload.medication_id ?? ""),
         doseMg: String(payload.dose_mg ?? ""),
         doseType: (payload.dose_type as DoseType) ?? "scheduled",
+        doseTimingContext: payload.timing_context === "wake" || payload.timing_context === "sleep" ? payload.timing_context : "other",
       });
     }
 
@@ -653,6 +659,7 @@ export default function DashboardPage() {
           medication_id: Number(entryForm.medicationId),
           dose_mg: entryForm.doseMg,
           dose_type: entryForm.doseType,
+          timing_context: entryForm.doseTimingContext,
         }, amendEventId);
       }
 
@@ -717,6 +724,7 @@ export default function DashboardPage() {
             name: medicationForm.name,
             strength,
             med_form: medicationForm.medForm,
+            med_type: medicationForm.medType || null,
             pill_size_mg: medicationForm.strengthPerForm,
             dosage: medicationForm.dosage,
             dose_unit: medicationForm.doseUnit,
@@ -1099,6 +1107,13 @@ export default function DashboardPage() {
                     placeholder="Form, e.g. tab"
                   />
                   <input
+                    aria-label="Medication type"
+                    value={medicationForm.medType}
+                    onChange={(e) => setMedicationForm((form) => ({ ...form, medType: e.target.value }))}
+                    className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
+                    placeholder="Medication type, e.g. Cannabis"
+                  />
+                  <input
                     aria-label="Dosage"
                     required
                     type="number"
@@ -1243,6 +1258,19 @@ export default function DashboardPage() {
                       <option value="reconciliation">Reconciliation</option>
                     </select>
                   </div>
+                  <select
+                    aria-label="Dose timing context"
+                    value={entryForm.doseTimingContext}
+                    onChange={(e) => setEntryForm((form) => ({
+                      ...form,
+                      doseTimingContext: e.target.value as "wake" | "sleep" | "other",
+                    }))}
+                    className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
+                  >
+                    <option value="other">No timing context</option>
+                    <option value="wake">Wake meds</option>
+                    <option value="sleep">Sleep meds</option>
+                  </select>
                 </>
               )}
 

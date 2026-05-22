@@ -159,7 +159,7 @@ module Api
                 .permit(:symptom_code, :severity, :body_location).to_h
         when "medication_dose"
           params.require(:health_event).require(:medication_dose_payload)
-                .permit(:medication_id, :dose_mg, :dose_type).to_h
+                .permit(:medication_id, :dose_mg, :dose_type, :timing_context).to_h
         else
           {}
         end

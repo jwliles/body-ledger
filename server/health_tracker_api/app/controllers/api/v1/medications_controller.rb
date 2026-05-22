@@ -27,14 +27,14 @@ module Api
         [
           :id, :name, :strength, :is_prn, :scheduled_times, :pill_size_mg,
           :date_started, :rx_date, :rx_qty, :rx_per_day, :dosage, :dose_unit,
-          :med_form, :is_active, :created_at
+          :med_form, :med_type, :is_active, :created_at
         ]
       end
 
       def medication_params
         params.require(:medication).permit(
           :name, :strength, :is_prn, :pill_size_mg, :date_started, :rx_date,
-          :rx_qty, :rx_per_day, :dosage, :dose_unit, :med_form, :is_active,
+          :rx_qty, :rx_per_day, :dosage, :dose_unit, :med_form, :med_type, :is_active,
           scheduled_times: []
         )
       end
