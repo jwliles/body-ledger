@@ -1,6 +1,4 @@
 class Medication < ApplicationRecord
-  include ImmutableRecord
-
   belongs_to :user
   has_many :medication_dose_payloads
 

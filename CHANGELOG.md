@@ -28,6 +28,23 @@ All notable changes to this project will be documented in this file.
 
 ### 📦 Other
 
+- *(uncategorized)* Moved sleep parity forward.
+
+  - Added timing_context to medication dose payloads: wake, sleep, other.
+  - Added med_type to medications so med_type: Cannabis becomes canonical medication metadata, not a sleep field.
+  - Updated the sleep dashboard report to include Datacore-style:
+      - By Medication
+      - By Medication Type
+      - Sleep Efficiency
+      - Sleep Efficiency Summary
+  - Implemented the cross-day rule: a sleep-timed medication dose on one day links to the next day’s sleep/steps/wake BP, while also considering same-night sleep BP.
+  - Added a parity-style test covering:
+      - sleep_minutes separate from time in bed
+      - sleep_meds -> next day sleep
+      - med -> by medication
+      - med_type -> by medication type
+      - avg sleep, avg qty, avg BP, avg steps, nights, BP reads
+  - Added UI fields for medication type and dose timing context.
 - *(uncategorized)* Implemented the first Rails-backed dashboard pass.
 
   What changed:
