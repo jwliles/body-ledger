@@ -28,6 +28,17 @@ All notable changes to this project will be documented in this file.
 
 ### 📦 Other
 
+- *(uncategorized)* What changed:
+
+  - Added PATCH /api/v1/medications/:id so medication admin details can be edited.
+  - Added POST /api/v1/medications/:id/merge so one medication can absorb another medication’s dose history, then deactivate the duplicate.
+  - Updated the Add Medication UI:
+      - Typing a name now detects existing/near-match medications.
+      - Exact matches switch the save action to Update medication.
+      - Match cards can load existing details into the form.
+      - If a target is selected and another match exists, a Merge button appears.
+      - You can still choose Create a separate medication instead.
+  - Placeholder imported meds no longer display 1 unit per unit in the med table.
 - *(uncategorized)* Implemented a journal importer/backfill path.
 
   What it does:

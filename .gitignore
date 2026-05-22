@@ -37,3 +37,5 @@ Thumbs.db
 # Generated QR codes (may contain TOTP secrets)
 otp.svg
 otp_clean.svg
+
+cloudflare.txt
