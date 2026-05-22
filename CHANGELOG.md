@@ -28,6 +28,8 @@ All notable changes to this project will be documented in this file.
 
 ### 📦 Other
 
+- *(uncategorized)* Fixed. Clicking an existing placeholder now loads its admin fields but keeps the medication name casing you typed in the form.
+- *(uncategorized)* Ignore local Cloudflare config
 - *(uncategorized)* What changed:
 
   - Added PATCH /api/v1/medications/:id so medication admin details can be edited.

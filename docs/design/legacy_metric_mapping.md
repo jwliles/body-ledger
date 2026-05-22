@@ -37,3 +37,20 @@ UI labels are presentation.
 
 Reports own cross-day interpretation. Records keep `date_key` attribution so
 Rails can recreate daily-note results while using normalized tables.
+
+## Import and Medication Administration
+
+The journal importer creates or reuses medications by normalized name. If the
+legacy note only supplies a medication name and quantity, the importer creates a
+placeholder medication with `1 unit` strength/form values so historical dose
+records have a stable medication ID.
+
+Those placeholders are administrative records, not immutable usage records. They
+should be edited later through the medication admin UI. Updating a placeholder
+changes how dashboards display the existing dose history because dose events keep
+pointing at the same medication ID.
+
+If a real medication is created separately from an imported placeholder, the app
+supports merging: dose payloads are reassigned to the kept medication and the
+duplicate medication is deactivated. The dose events themselves remain ledger
+history.

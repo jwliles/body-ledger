@@ -18,6 +18,15 @@ rails s    # → http://localhost:3000
 | `HEALTH_TRACKER_API_DATABASE_PASSWORD` | Production only | PostgreSQL password |
 | `ALLOWED_ORIGINS` | Production only | Comma-separated CORS origins |
 
+For production, keep these in a root-only `.env.production` file outside Git and source
+that file before one-off Rails commands:
+
+```sh
+set -a
+source .env.production
+set +a
+```
+
 ## Stack
 
 | | |
@@ -32,6 +41,31 @@ rails s    # → http://localhost:3000
 ## Key Design Decisions
 
 - **Immutable records** — health events are never deleted or overwritten; amendments reference originals via `supersedes_id`
+- **Editable medication administration** — medication reference/admin fields can be updated; dose usage remains event history
 - **Device token auth** — SHA-256 digest stored in DB (not bcrypt); 256-bit entropy raw token returned once at device registration
 - **Projectors** — materialize `daily_summaries` from the event log for all 7 metric types
-- **Append-only sync** — clients pull events from other devices via `POST /api/v1/sync`
+- **Append-style sync model** — browser/PWA installs are represented as devices; the sync endpoint exists for future offline behavior
+
+## Operational Tasks
+
+### Journal Import
+
+```sh
+DRY_RUN=true USERNAME='jwl' JOURNAL_PATH='/root/body-ledger/import/journal' \
+bin/rake body_ledger:import_journal
+
+DRY_RUN=false USERNAME='jwl' JOURNAL_PATH='/root/body-ledger/import/journal' \
+bin/rake body_ledger:import_journal
+```
+
+The importer creates placeholder medications when legacy dose records only contain
+a name. Those medication records are meant to be enriched later through the web UI.
+
+### Medication Admin
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/api/v1/medications` | List medications |
+| `POST` | `/api/v1/medications` | Create medication |
+| `PATCH` | `/api/v1/medications/:id` | Update medication admin fields |
+| `POST` | `/api/v1/medications/:id/merge` | Move dose history from a duplicate into the kept medication |

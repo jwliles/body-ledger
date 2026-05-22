@@ -31,14 +31,14 @@ This app uses Next standalone output. `npm run build` also copies `public/` and 
 ## What's Built
 
 - **Auth page** (`/`) — login and signup tabs, TOTP input field
-- **Dashboard** (`/dashboard`) — medication adherence table (last dose, time since); protected route
+- **Dashboard** (`/dashboard`) — health metrics, medication dose entry, BP/HR, weight, sleep, steps, editable records, medication admin update/merge flow
+- **Reports** (`/reports`) — Rails-backed Datacore-parity dashboards
 
 ## In Progress
 
-- Metric entry forms (7 types: BP, weight, sleep, activity, nutrition, symptom, medication dose)
-- History view
+- Full history filtering
 - Daily summary view
-- Settings (medications, device management)
+- Device management
 
 ## Stack
 
