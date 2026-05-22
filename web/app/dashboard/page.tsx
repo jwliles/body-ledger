@@ -261,11 +261,47 @@ function formatAdherence(taken: number, expected: number | null): string {
   return `${Math.round((taken / expected) * 100)}%`;
 }
 
+function normalizedMedicationName(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function isPlaceholderMedication(medication: Medication): boolean {
+  return (
+    toNumber(medication.pill_size_mg) === 1 &&
+    toNumber(medication.dosage) === 1 &&
+    medication.dose_unit === "unit" &&
+    medication.med_form === "unit" &&
+    !medication.date_started &&
+    !medication.rx_date &&
+    !medication.rx_qty &&
+    !medication.rx_per_day
+  );
+}
+
 function medicationStrengthLabel(medication: Medication): string {
+  if (isPlaceholderMedication(medication)) return "";
+
   const strength = medication.pill_size_mg
     ? formatDose(medication.pill_size_mg, medication.dose_unit)
     : medication.strength;
   return `${strength} per ${medication.med_form ?? "form"}`;
+}
+
+function medicationFormFromRecord(medication: Medication): MedicationForm {
+  return {
+    name: medication.name,
+    medForm: medication.med_form ?? "tab",
+    medType: medication.med_type ?? "",
+    strengthPerForm: medication.pill_size_mg ? String(medication.pill_size_mg) : "",
+    dosage: medication.dosage ? String(medication.dosage) : "",
+    doseUnit: medication.dose_unit || "mg",
+    dateStarted: medication.date_started ?? "",
+    rxDate: medication.rx_date ?? "",
+    rxQty: medication.rx_qty ? String(medication.rx_qty) : "",
+    rxPerDay: medication.rx_per_day ? String(medication.rx_per_day) : "",
+    isPrn: medication.is_prn,
+    scheduledTimes: medication.scheduled_times?.join(", ") ?? "08:00",
+  };
 }
 
 async function parseApiError(response: Response): Promise<string> {
@@ -287,6 +323,8 @@ export default function DashboardPage() {
   const [medications, setMedications] = useState<Medication[]>([]);
   const [events, setEvents] = useState<HealthEvent[]>([]);
   const [medicationForm, setMedicationForm] = useState<MedicationForm>(initialMedicationForm);
+  const [medicationAdminTargetId, setMedicationAdminTargetId] = useState<number | null>(null);
+  const [createSeparateMedication, setCreateSeparateMedication] = useState(false);
   const [entryKind, setEntryKind] = useState<EntryKind>("medication_dose");
   const [entryForm, setEntryForm] = useState<EntryForm>(() => initialEntryForm());
   const [entryOpen, setEntryOpen] = useState(false);
@@ -328,6 +366,32 @@ export default function DashboardPage() {
   const doseEvents = useMemo(() => {
     return events.filter((event) => event.metric_type === "medication_dose");
   }, [events]);
+
+  const medicationNameMatches = useMemo(() => {
+    const normalizedName = normalizedMedicationName(medicationForm.name);
+    if (!normalizedName) return [];
+
+    return medications.filter((medication) => {
+      const existingName = normalizedMedicationName(medication.name);
+      return (
+        existingName === normalizedName ||
+        existingName.includes(normalizedName) ||
+        normalizedName.includes(existingName)
+      );
+    });
+  }, [medicationForm.name, medications]);
+
+  const exactMedicationNameMatch = useMemo(() => {
+    const normalizedName = normalizedMedicationName(medicationForm.name);
+    if (!normalizedName) return undefined;
+    return medications.find((medication) => normalizedMedicationName(medication.name) === normalizedName);
+  }, [medicationForm.name, medications]);
+
+  const medicationAdminTarget = useMemo(() => {
+    if (createSeparateMedication) return undefined;
+    if (medicationAdminTargetId) return medicationById[medicationAdminTargetId];
+    return exactMedicationNameMatch;
+  }, [createSeparateMedication, exactMedicationNameMatch, medicationAdminTargetId, medicationById]);
 
   const healthMetrics = useMemo(() => {
     const amBp = latestEvent(
@@ -512,6 +576,8 @@ export default function DashboardPage() {
     const firstMedication = activeMedications[0];
     setEditingEvent(null);
     setEntryKind(kind);
+    setMedicationAdminTargetId(null);
+    setCreateSeparateMedication(false);
     setEntryForm({
       ...initialEntryForm(),
       medicationId: firstMedication ? String(firstMedication.id) : "",
@@ -711,10 +777,11 @@ export default function DashboardPage() {
   async function createMedicationRecord(token: string): Promise<boolean> {
     const scheduledTimes = parseScheduledTimes(medicationForm.scheduledTimes);
     const strength = `${medicationForm.strengthPerForm}${medicationForm.doseUnit} ${medicationForm.medForm}`;
+    const targetMedication = medicationAdminTarget;
 
     try {
-      const res = await fetch(`${API}/api/v1/medications`, {
-        method: "POST",
+      const res = await fetch(`${API}/api/v1/medications${targetMedication ? `/${targetMedication.id}` : ""}`, {
+        method: targetMedication ? "PATCH" : "POST",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
@@ -745,11 +812,47 @@ export default function DashboardPage() {
       }
 
       setMedicationForm(initialMedicationForm);
+      setMedicationAdminTargetId(null);
+      setCreateSeparateMedication(false);
       await fetchData();
       return true;
     } catch {
       setError("Could not reach the server");
       return false;
+    }
+  }
+
+  async function mergeMedicationRecord(sourceMedicationId: number, targetMedicationId: number) {
+    const token = localStorage.getItem("device_token");
+    if (!token) {
+      router.replace("/");
+      return;
+    }
+
+    setError(null);
+    setSavingEntry(true);
+
+    try {
+      const res = await fetch(`${API}/api/v1/medications/${targetMedicationId}/merge`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ source_medication_id: sourceMedicationId }),
+      });
+
+      if (!res.ok) {
+        setError(await parseApiError(res));
+        return;
+      }
+
+      setMedicationAdminTargetId(targetMedicationId);
+      await fetchData();
+    } catch {
+      setError("Could not reach the server");
+    } finally {
+      setSavingEntry(false);
     }
   }
 
@@ -829,7 +932,9 @@ export default function DashboardPage() {
                       <div key={row.medication.id} className="p-4">
                         <div className="mb-3">
                           <p className="text-base font-medium text-ctp-text">{row.medication.name}</p>
-                          <p className="text-xs text-ctp-overlay0">{medicationStrengthLabel(row.medication)}</p>
+                          {medicationStrengthLabel(row.medication) && (
+                            <p className="text-xs text-ctp-overlay0">{medicationStrengthLabel(row.medication)}</p>
+                          )}
                         </div>
                         <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
                           <dt className="text-ctp-overlay0">Started</dt>
@@ -880,7 +985,9 @@ export default function DashboardPage() {
                           <tr key={row.medication.id} className={index % 2 === 0 ? "bg-ctp-base" : "bg-ctp-mantle"}>
                             <td className="px-4 py-3 text-ctp-text">
                               {row.medication.name}
-                              <span className="ml-2 text-ctp-overlay0">{medicationStrengthLabel(row.medication)}</span>
+                              {medicationStrengthLabel(row.medication) && (
+                                <span className="ml-2 text-ctp-overlay0">{medicationStrengthLabel(row.medication)}</span>
+                              )}
                             </td>
                             <td className="px-4 py-3 text-ctp-subtext0">{formatDateOnly(row.medication.date_started)}</td>
                             <td className="px-4 py-3 text-ctp-subtext0">{formatDateOnly(row.medication.rx_date)}</td>
@@ -1073,10 +1180,74 @@ export default function DashboardPage() {
                     aria-label="Medication name"
                     required
                     value={medicationForm.name}
-                    onChange={(e) => setMedicationForm((form) => ({ ...form, name: e.target.value }))}
+                    onChange={(e) => {
+                      setMedicationAdminTargetId(null);
+                      setCreateSeparateMedication(false);
+                      setMedicationForm((form) => ({ ...form, name: e.target.value }));
+                    }}
                     className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
                     placeholder="Medication name, e.g. lisinopril"
                   />
+                  {medicationNameMatches.length > 0 && (
+                    <div className="rounded-lg border border-ctp-surface1 bg-ctp-mantle p-3">
+                      <p className="text-sm font-medium text-ctp-text">
+                        {medicationAdminTarget ? "Updating existing medication" : "Existing medication match"}
+                      </p>
+                      <div className="mt-2 flex flex-col gap-2">
+                        {medicationNameMatches.slice(0, 4).map((medication) => (
+                          <div
+                            key={medication.id}
+                            className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
+                              medicationAdminTarget?.id === medication.id
+                                ? "border-ctp-blue bg-ctp-surface0 text-ctp-text"
+                                : "border-ctp-surface0 text-ctp-subtext1 hover:border-ctp-blue hover:text-ctp-text"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setMedicationAdminTargetId(medication.id);
+                                  setCreateSeparateMedication(false);
+                                  setMedicationForm(medicationFormFromRecord(medication));
+                                }}
+                                className="min-w-0 flex-1 text-left"
+                              >
+                                <span className="block font-medium">{medication.name}</span>
+                                <span className="mt-0.5 block text-xs text-ctp-overlay0">
+                                  {isPlaceholderMedication(medication)
+                                    ? "Imported placeholder"
+                                    : medicationStrengthLabel(medication) || "Medication details"}
+                                </span>
+                              </button>
+                              {medicationAdminTarget && medicationAdminTarget.id !== medication.id && (
+                                <button
+                                  type="button"
+                                  disabled={savingEntry}
+                                  onClick={() => mergeMedicationRecord(medication.id, medicationAdminTarget.id)}
+                                  className="shrink-0 rounded-md border border-ctp-surface1 px-2 py-1 text-xs text-ctp-blue hover:border-ctp-blue disabled:opacity-50"
+                                >
+                                  Merge
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <label className="mt-3 flex items-center gap-2 text-sm text-ctp-subtext1">
+                        <input
+                          type="checkbox"
+                          checked={createSeparateMedication}
+                          onChange={(e) => {
+                            setCreateSeparateMedication(e.target.checked);
+                            if (e.target.checked) setMedicationAdminTargetId(null);
+                          }}
+                          className="h-4 w-4 accent-[#89b4fa]"
+                        />
+                        Create a separate medication instead
+                      </label>
+                    </div>
+                  )}
                   <div className="grid grid-cols-[1fr_84px] gap-2">
                     <input
                       aria-label="Strength per form"
@@ -1382,7 +1553,13 @@ export default function DashboardPage() {
                 disabled={savingEntry}
                 className="mt-1 rounded-lg bg-[#89b4fa] px-4 py-2 text-sm font-medium text-[#1e1e2e] transition hover:bg-[#74c7ec] disabled:opacity-50"
               >
-                {savingEntry ? "Saving..." : editingEvent ? "Save correction" : "Save"}
+                {savingEntry
+                  ? "Saving..."
+                  : editingEvent
+                    ? "Save correction"
+                    : entryKind === "new_medication" && medicationAdminTarget
+                      ? "Update medication"
+                      : "Save"}
               </button>
             </div>
           </form>

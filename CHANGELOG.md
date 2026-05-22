@@ -28,6 +28,18 @@ All notable changes to this project will be documented in this file.
 
 ### 📦 Other
 
+- *(uncategorized)* Implemented a journal importer/backfill path.
+
+  What it does:
+
+  - Reads nested journal files under /home/jwl/projects/notes/journal/**/*.md.
+  - Parses YAML frontmatter.
+  - Imports typed records for BP, sleep, weight, steps, and medication doses.
+  - Parses ## Meds dose lines like med:: [[lisinopril]] | qty:: 2.
+  - Imports frontmatter sleep meds from med, med_type, qty.
+  - Uses deterministic client_uuids so you can re-run it without duplicating events.
+  - Supports aliases for older metric names like am_*/pm_* as well as wake_*/sleep_*.
+  - Allows sleep minutes to import even when older notes lack bedtime/wake_time.
 - *(uncategorized)* Moved sleep parity forward.
 
   - Added timing_context to medication dose payloads: wake, sleep, other.

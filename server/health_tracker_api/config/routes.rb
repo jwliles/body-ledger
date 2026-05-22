@@ -16,7 +16,11 @@ Rails.application.routes.draw do
         end
       end
 
-      resources :medications, only: [ :index, :create ]
+      resources :medications, only: [ :index, :create, :update ] do
+        member do
+          post :merge
+        end
+      end
       resources :reports, only: [ :index, :show ], param: :id
       resources :summaries, only: [ :index ]
       resource  :sync,      only: [ :create ]
