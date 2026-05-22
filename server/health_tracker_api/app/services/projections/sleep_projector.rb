@@ -8,15 +8,25 @@ module Projections
       # date_key is the wake date, so a given day may have one sleep record.
       # If multiple somehow exist (amendments edge case), sum durations.
       payloads     = events.map(&:sleep_payload)
-      total_min    = payloads.sum(&:duration_minutes)
+      time_in_bed  = payloads.sum(&:time_in_bed_minutes)
+      sleep_min    = payloads.sum(&:reported_sleep_minutes)
       sleep_starts = payloads.map(&:sleep_start)
       sleep_ends   = payloads.map(&:sleep_end)
+      efficiency   = time_in_bed.positive? ? ((sleep_min.to_f / time_in_bed) * 100).round(1) : nil
 
       {
-        total_duration_minutes: total_min,
-        sleep_start:            sleep_starts.min&.iso8601,
-        sleep_end:              sleep_ends.max&.iso8601,
-        session_count:          payloads.size
+        sleep_minutes:            sleep_min,
+        time_in_bed_minutes:      time_in_bed,
+        awake_minutes:            [ time_in_bed - sleep_min, 0 ].max,
+        sleep_efficiency_percent: efficiency,
+        sleep_start:              sleep_starts.min&.iso8601,
+        sleep_end:                sleep_ends.max&.iso8601,
+        session_count:            payloads.size,
+        provenance: {
+          sleep_minutes: payloads.any?(&:sleep_minutes) ? "entered" : "derived_from_interval",
+          time_in_bed_minutes: "derived_from_sleep_start_and_sleep_end",
+          sleep_efficiency_percent: "derived_from_sleep_minutes_and_time_in_bed"
+        }
       }
     end
   end

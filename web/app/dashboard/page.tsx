@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 const API = process.env.NEXT_PUBLIC_API_URL;
@@ -61,6 +62,7 @@ type EntryForm = {
   weight: string;
   wakeTime: string;
   bedtime: string;
+  sleepMinutes: string;
   steps: string;
 };
 
@@ -95,6 +97,7 @@ const initialEntryForm = (): EntryForm => ({
   weight: "",
   wakeTime: "",
   bedtime: "",
+  sleepMinutes: "",
   steps: "",
 });
 
@@ -562,6 +565,7 @@ export default function DashboardPage() {
         date: sleepEnd.toISOString().slice(0, 10),
         bedtime: sleepStart.toTimeString().slice(0, 5),
         wakeTime: sleepEnd.toTimeString().slice(0, 5),
+        sleepMinutes: String(payload.sleep_minutes ?? ""),
       });
     }
 
@@ -675,6 +679,7 @@ export default function DashboardPage() {
         await createHealthEvent(token, "sleep", sleep.end, "sleep_payload", {
           sleep_start: sleep.start,
           sleep_end: sleep.end,
+          sleep_minutes: entryForm.sleepMinutes || null,
         }, amendEventId);
       }
 
@@ -758,6 +763,12 @@ export default function DashboardPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-base font-medium text-ctp-subtext1">Health Dashboard</h2>
             <div className="flex flex-wrap gap-2">
+              <Link
+                href="/reports"
+                className="rounded-lg border border-ctp-surface1 px-4 py-2 text-sm font-medium text-ctp-text transition hover:border-ctp-blue"
+              >
+                Reports
+              </Link>
               <button
                 type="button"
                 onClick={() => openEntryModal()}
@@ -1292,24 +1303,36 @@ export default function DashboardPage() {
               )}
 
               {entryKind === "sleep" && (
-                <div className="grid grid-cols-2 gap-2">
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      aria-label="Bedtime"
+                      type="time"
+                      required
+                      value={entryForm.bedtime}
+                      onChange={(e) => setEntryForm((form) => ({ ...form, bedtime: e.target.value }))}
+                      className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
+                    />
+                    <input
+                      aria-label="Wake time"
+                      type="time"
+                      required
+                      value={entryForm.wakeTime}
+                      onChange={(e) => setEntryForm((form) => ({ ...form, wakeTime: e.target.value }))}
+                      className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
+                    />
+                  </div>
                   <input
-                    aria-label="Bedtime"
-                    type="time"
-                    required
-                    value={entryForm.bedtime}
-                    onChange={(e) => setEntryForm((form) => ({ ...form, bedtime: e.target.value }))}
-                    className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
+                    aria-label="Sleep minutes"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={entryForm.sleepMinutes}
+                    onChange={(e) => setEntryForm((form) => ({ ...form, sleepMinutes: e.target.value }))}
+                    className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:ring-2 focus:ring-ctp-blue"
+                    placeholder="Sleep minutes from tracker"
                   />
-                  <input
-                    aria-label="Wake time"
-                    type="time"
-                    required
-                    value={entryForm.wakeTime}
-                    onChange={(e) => setEntryForm((form) => ({ ...form, wakeTime: e.target.value }))}
-                    className="rounded-lg bg-ctp-surface1 px-3 py-2 text-sm text-ctp-text outline-none focus:ring-2 focus:ring-ctp-blue"
-                  />
-                </div>
+                </>
               )}
 
               {entryKind === "steps" && (

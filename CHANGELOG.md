@@ -28,6 +28,22 @@ All notable changes to this project will be documented in this file.
 
 ### 📦 Other
 
+- *(uncategorized)* Implemented it in web/app/dashboard/page.tsx.
+
+  What changed:
+
+  - Replaced separate Add medication / Add data actions with one Add record button.
+  - Add record now supports:
+      - New medication
+      - Medication dose
+      - Blood pressure / heart rate
+      - Weight
+      - Sleep
+      - Steps
+  - Added Edit records.
+      - Opens recent records.
+      - Selecting one reuses the record modal in edit mode.
+      - Saves corrections through the existing Rails /api/v1/health_events/:id/amend endpoint.
 - *(uncategorized)* Changes:
 
   - Removed "orientation": "portrait-primary" from web/public/manifest.webmanifest:1, so the installed PWA can rotate with the phone.

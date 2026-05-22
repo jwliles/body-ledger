@@ -142,7 +142,7 @@ module Api
                 .permit(:value_kg, :original_unit, :original_value).to_h
         when "sleep"
           params.require(:health_event).require(:sleep_payload)
-                .permit(:sleep_start, :sleep_end).to_h
+                .permit(:sleep_start, :sleep_end, :sleep_minutes).to_h
         when "activity"
           params.require(:health_event).require(:activity_payload)
                 .permit(:activity_type, :duration_minutes, :distance_km,

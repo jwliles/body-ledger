@@ -17,6 +17,7 @@ Rails.application.routes.draw do
       end
 
       resources :medications, only: [ :index, :create ]
+      resources :reports, only: [ :index, :show ], param: :id
       resources :summaries, only: [ :index ]
       resource  :sync,      only: [ :create ]
     end
