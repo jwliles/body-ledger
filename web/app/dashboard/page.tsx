@@ -1209,7 +1209,10 @@ export default function DashboardPage() {
                                 onClick={() => {
                                   setMedicationAdminTargetId(medication.id);
                                   setCreateSeparateMedication(false);
-                                  setMedicationForm(medicationFormFromRecord(medication));
+                                  setMedicationForm({
+                                    ...medicationFormFromRecord(medication),
+                                    name: medicationForm.name.trim() || medication.name,
+                                  });
                                 }}
                                 className="min-w-0 flex-1 text-left"
                               >
